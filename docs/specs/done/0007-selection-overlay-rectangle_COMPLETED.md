@@ -18,7 +18,7 @@ PRD behavior delivered here (docs/PRD.md §5):
 - Esc cancels at any time and closes the overlay (on every display).
 - After a selection, the overlay is removed before capture.
 - While the overlay is open, all Snapper shortcuts are ignored.
-- If a display is connected or disconnected while the overlay is open, the selection is cancelled.
+- If a display is connected or disconnected, or its arrangement, resolution, or scale changes while the overlay is open, the selection is cancelled.
 
 Window mode and the Space toggle (docs/PRD.md §5 lines 70–73) are **not** in this spec (see 0009), but the types below are shaped so 0009 can add them without redesign.
 
@@ -68,7 +68,7 @@ As a Snapper user, when I press ⌘⇧4, ⌘⇧5, or ⌘⇧6 (or pick the matchi
     - Constants: `static let offset: CGFloat = 12`, `static let margin: CGFloat = 4`.
     - `cursor` is the tracker's clamped `currentPoint`, and `display` is the **start display's** frame, so the readout always stays on the start display even when the real cursor has crossed onto another one.
 
-- **`Snapper/Capture/DisplayConfigurationChange.swift`** — `enum DisplayConfigurationChange` with `static func requiresCancel(old: [DisplayInfo], new: [DisplayInfo]) -> Bool`. Returns `true` when the set of display IDs differs (connect/disconnect, as required by docs/PRD.md §5 line 77) **or** when any display with the same ID has a different frame or backing scale (the panels and the start display would be stale). Order-insensitive. Returns `false` when both lists describe the same displays. See Open questions for the "frame/scale changed" half.
+- **`Snapper/Capture/DisplayConfigurationChange.swift`** — `enum DisplayConfigurationChange` with `static func requiresCancel(old: [DisplayInfo], new: [DisplayInfo]) -> Bool`. Returns `true` when the set of display IDs differs (connect/disconnect, as required by docs/PRD.md §5 line 77) **or** when any display with the same ID has a different frame or backing scale (the panels and the start display would be stale). Order-insensitive. Returns `false` when both lists describe the same displays. Arrangement, resolution, and scale cancellation was approved on 2026-11-02.
 
 ### Platform glue (AppKit, manually verified)
 
@@ -126,7 +126,7 @@ As a Snapper user, when I press ⌘⇧4, ⌘⇧5, or ⌘⇧6 (or pick the matchi
 - [ ] Releasing a ≥ 4 × 4 drag closes the overlay on all displays and logs the purpose, the display ID, and the rect.
 - [ ] Esc closes the overlay on every display at any time (before or during a drag), and nothing is logged as a selection.
 - [ ] While the overlay is open, ⌘⇧4/⌘⇧5/⌘⇧6 do nothing (no second overlay, no stacked panels).
-- [ ] Connecting or disconnecting a display while the overlay is open cancels it on all displays.
+- [ ] Connecting or disconnecting a display, or changing its arrangement, resolution, or scale while the overlay is open cancels it on all displays.
 - [ ] After the overlay closes (finish or cancel), the previously frontmost app has keyboard focus again and all shortcuts work again.
 - [ ] The overlay panels are ordered out, and the dismissal delay has elapsed, before the result is delivered.
 
@@ -194,3 +194,31 @@ As a Snapper user, when I press ⌘⇧4, ⌘⇧5, or ⌘⇧6 (or pick the matchi
 ## Open questions
 
 None. On 2026-11-02, the user confirmed that changing a display’s arrangement, resolution, or scale cancels an open selection, as does connecting or disconnecting a display. Recorded in PRD §5.
+
+
+## Verification status
+
+Implemented on 2026-11-02. Automated verification is green:
+
+- `xcodegen generate` succeeded.
+- `xcodebuild -scheme Snapper -configuration Debug build` → **BUILD SUCCEEDED**.
+- `xcodebuild -scheme Snapper test` → **TEST SUCCEEDED**; **145 tests in 20 suites passed**, including 17 new tests for rectangle tracking, readout formatting/placement, and display configuration changes.
+- Reused `DisplayInfo.allCurrent()` / `DisplayInfo.from(_:)`; no duplicate NSScreen adapter, project settings, dependencies, signing, PRD, or AGENTS.md changes were needed.
+- All geometry remains in global AppKit points, with mixed-scale and negative-origin fixtures.
+- GUI behavior has not been run. Selection now shows real overlays and logs results; screenshot capture, annotation, and recording pipelines remain later specs.
+
+Manual verification pending (real GUI session, Screen Recording permission granted; two displays, including Retina if possible):
+
+- [ ] not yet run by user — Press ⌘⇧4. Every display dims, including menu bar and Dock; the cursor is a crosshair on each display. Press Esc: the overlay disappears on every display, no "Selection" log line.
+- [ ] not yet run by user — Repeat step 1 with ⌘⇧5, ⌘⇧6, and each of the three menu items.
+- [ ] not yet run by user — ⌘⇧4, drag a rectangle on the main display. The inside is clear with a white border, the rest stays dimmed, and the other display stays fully dimmed. The readout shows e.g. `640 × 480` near the cursor and updates live. Release: overlay closes everywhere; the log shows `screenshot`, the display ID and the rect.
+- [ ] not yet run by user — ⌘⇧4, start a drag near the right edge of one display and move onto the other display. The rectangle stops at the edge of the start display and the readout stays on the start display. Release: the logged rect lies within the start display.
+- [ ] not yet run by user — ⌘⇧4, drag toward the bottom-right corner of a display: the readout flips to the left/above the cursor and never goes off-screen.
+- [ ] not yet run by user — ⌘⇧4, click without moving: nothing happens, overlay stays. Make a ~3-point drag: same. Then make a normal drag: it is logged.
+- [ ] not yet run by user — ⌘⇧4, then press ⌘⇧4, ⌘⇧5, ⌘⇧6 while the overlay is open: nothing changes (no extra panels; one Esc closes everything).
+- [ ] not yet run by user — ⌘⇧4 during a drag, press Esc: overlay closes on every display.
+- [ ] not yet run by user — With Safari frontmost (also try a full-screen Safari window): press ⌘⇧4. The overlay covers the full-screen Space. Esc works without clicking first. After closing, typing goes to Safari again.
+- [ ] not yet run by user — ⌘⇧4, then connect or disconnect a display: the overlay closes on all displays and the app is back to idle (⌘⇧4 opens a fresh overlay that covers the new display set).
+- [ ] not yet run by user — ⌘⇧5, finish a selection: the log shows `record`, and afterwards ⌘⇧4 still opens the overlay (the app returned to idle; recording itself is 0011).
+- [ ] not yet run by user — Revoke Screen Recording permission and press ⌘⇧4: the onboarding window opens instead of the overlay (0006 gate still in front).
+- [ ] not yet run by user — Open an overlay, then change a display’s arrangement, resolution, or scale: the overlay closes on all displays; a fresh shortcut opens an overlay using the new frames and scales.

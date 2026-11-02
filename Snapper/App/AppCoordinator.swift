@@ -6,6 +6,8 @@ import os
 final class AppCoordinator: NSObject {
     let settings = AppSettings()
     private let logger = Logger(subsystem: "com.thera-engineering.snapper", category: "AppMode")
+    private let selectionLogger = Logger(subsystem: "com.thera-engineering.snapper", category: "selection")
+    private let overlay = SelectionOverlayController()
     private let settingsWindowController = SettingsWindowController()
     private lazy var onboardingWindowController = OnboardingWindowController(settings: settings)
     private var statusItemController: StatusItemController?
@@ -40,7 +42,7 @@ final class AppCoordinator: NSObject {
         case .none: break
         case .showOverlay(let purpose): beginSelection(for: purpose)
         case .completeSelection(let purpose):
-            logger.info("Selection completed for \(purpose.rawValue, privacy: .public) (pipeline not implemented yet)")
+            logger.info("Capture pipeline for \(purpose.rawValue, privacy: .public) is not implemented yet")
         case .stopRecording:
             logger.info("Stop recording requested (not implemented until 0011)")
         case .openMenu: statusItemController?.showMenu()
@@ -54,8 +56,21 @@ final class AppCoordinator: NSObject {
             showOnboarding()
             return
         }
-        logger.info("Overlay requested for \(purpose.rawValue, privacy: .public) (not implemented until 0007)")
-        send(.selectionCancelled)
+        Task { @MainActor in
+            guard let result = await overlay.selectRegion() else {
+                send(.selectionCancelled)
+                return
+            }
+            send(.selectionFinished)
+            switch result {
+            case .rect(let display, let rect):
+                selectionLogger.info("Selection for \(purpose.rawValue, privacy: .public): display \(display.displayID), rect \(String(describing: rect), privacy: .public)")
+            }
+            if purpose == .record {
+                // TODO(0011): start RecordingSession here.
+                send(.recordingEnded)
+            }
+        }
     }
 
     func showOnboarding() { onboardingWindowController.show() }
