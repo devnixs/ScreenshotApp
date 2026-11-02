@@ -58,6 +58,7 @@ Run the build and the tests before reporting work as done. Report failures as th
 - All UI work runs on `@MainActor`. ScreenCaptureKit callbacks must hop back to the main actor before touching UI.
 - Our own windows (overlays, recording pill and border) must be **excluded from capture** through `SCContentFilter`, so they never appear in screenshots or recordings.
 - A selection is always confined to one display. Convert carefully between AppKit's bottom-left global coordinates and ScreenCaptureKit and CoreGraphics' top-left coordinates. This is the most common source of bugs, so cover it with tests.
+  Use `DisplayGeometry` for coordinate conversion, display lookup, drag clamping, and pixel alignment; feature code must not flip Y inline. `DisplayInfo.allCurrent()` is the main-actor AppKit adapter, and capture regions use the selected display's own backing scale.
 - Store preferences in `UserDefaults`, behind one typed settings type. Shortcuts are stored by `KeyboardShortcuts`.
 
 ## Spec workflow

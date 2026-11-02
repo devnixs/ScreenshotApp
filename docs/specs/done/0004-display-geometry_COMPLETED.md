@@ -178,14 +178,14 @@ free. Rects are standard (non-negative width/height) unless stated otherwise.
 
 ## Acceptance criteria
 
-- [ ] `DisplayGeometry`, `DisplayInfo`, `PixelSize`, `CaptureRegion` exist in
+- [x] `DisplayGeometry`, `DisplayInfo`, `PixelSize`, `CaptureRegion` exist in
       `Snapper/Capture/DisplayGeometry.swift`, compile under Swift 6 strict concurrency, and import
       no AppKit.
-- [ ] `DisplayInfo.from(_:)` / `allCurrent()` exist in `Snapper/Capture/DisplayInfo+NSScreen.swift`,
+- [x] `DisplayInfo.from(_:)` / `allCurrent()` exist in `Snapper/Capture/DisplayInfo+NSScreen.swift`,
       `@MainActor`.
-- [ ] All functions behave exactly as specified above, including the half-open/closed edge rules,
+- [x] All functions behave exactly as specified above, including the half-open/closed edge rules,
       outward pixel rounding with ε, and zero-size handling.
-- [ ] `SnapperTests/DisplayGeometryTests.swift` covers every case in the test plan and passes.
+- [x] `SnapperTests/DisplayGeometryTests.swift` covers every case in the test plan and passes.
 - [ ] The app still builds, launches as before (0001 behavior unchanged), and the full test suite
       passes.
 
@@ -307,3 +307,27 @@ free. Rects are standard (non-negative width/height) unless stated otherwise.
 - Recording pill placement — 0012; window frame tracking — 0013.
 - Reacting to display configuration changes (cancel overlay / stop recording) — 0007, 0011.
 - Annotation canvas coordinate transforms (`CanvasTransform`) — 0017.
+
+
+## Verification status
+
+- Date: 2026-11-02.
+- `xcodegen generate`: succeeded.
+- `xcodebuild -scheme Snapper -configuration Debug build`: **BUILD SUCCEEDED**.
+- `xcodebuild -scheme Snapper test`: **TEST SUCCEEDED** — 107 tests in 11 suites passed,
+  including 32 new `DisplayGeometryTests` tests covering all 29 planned cases, mixed scales,
+  nonzero origins, shared-edge ordering, fractional-origin alignment, and degenerate selections.
+- The initial test run caught an overlapping fixture in the extra shared-corner test. Corrected
+  that fixture to use non-overlapping displays; the subsequent full suite passed.
+- Pure geometry imports only CoreGraphics/Foundation; NSScreen access is isolated to the
+  main-actor adapter. No GUI behavior was exercised or verified.
+- PRD unchanged: no product behavior was added. AGENTS.md now directs feature code to the shared
+  geometry helpers instead of inline Y flips.
+
+Manual verification:
+
+- [ ] not yet run by user — Run the built app and confirm the `camera.viewfinder` menu bar icon
+  appears and its menu works as in 0001 (no regression).
+
+The launch portion of the final acceptance criterion remains unchecked until this manual check
+is run. Multi-display overlay and capture checks belong to the first consumers, 0007 and 0008.
