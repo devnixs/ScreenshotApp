@@ -193,12 +193,4 @@ As a Snapper user, when I press ⌘⇧4, ⌘⇧5, or ⌘⇧6 (or pick the matchi
 
 ## Open questions
 
-- **Non-blocking:** docs/PRD.md §5 line 77 only says connecting or disconnecting a display cancels the selection. This spec also cancels when an existing display's frame or scale changes while the overlay is open (resolution change, arrangement change), because the panels and the start display would otherwise be stale. Recommended: keep this; if the user agrees, add "or its arrangement/resolution changes" to §5. The implementer can proceed with the behavior as specified.
-
-## Out of scope
-
-- Window mode, Space toggle, window highlight, `SelectionResult.window` — **0009** (this spec's `RectSelectionTracker.reset()` and the exhaustive `SelectionResult` switch are the hooks).
-- Capturing the selection, `SCContentFilter` exclusion of our app, clipboard, shutter sound, error alerts — **0008**.
-- Starting a recording from the selection, pill and border — **0011**, **0012**, **0013**.
-- Opening the annotation window — **0017**.
-- Shortcut registration, the mode machine and its ignore rules — **0005**; permission gate and onboarding — **0006**; coordinate helpers themselves — **0004**.
+None. On 2026-11-02, the user confirmed that changing a display’s arrangement, resolution, or scale cancels an open selection, as does connecting or disconnecting a display. Recorded in PRD §5.

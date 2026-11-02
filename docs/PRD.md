@@ -74,7 +74,7 @@ All three shortcuts can be changed in Settings.
 - **Esc** cancels at any time and closes the overlay without doing anything.
 - After a selection, the overlay is removed before capture so it never appears in the output.
 - While the overlay is open, all Snapper shortcuts are ignored.
-- If a display is connected or disconnected while the overlay is open, the selection is cancelled.
+- If a display is connected or disconnected, or its arrangement, resolution, or scale changes while the overlay is open, the selection is cancelled.
 
 ## 6. Feature: Screenshot (⌘⇧4)
 
