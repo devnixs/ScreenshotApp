@@ -3,6 +3,7 @@ import os
 
 @MainActor
 final class AppCoordinator: NSObject {
+    let settings = AppSettings()
     private let logger = Logger(subsystem: "com.thera-engineering.snapper", category: "app")
     private let settingsWindowController = SettingsWindowController()
     private var statusItemController: StatusItemController?

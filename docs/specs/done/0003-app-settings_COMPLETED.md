@@ -162,3 +162,15 @@ As a Snapper user, my choices (save folder, screenshot destination, shutter soun
 - Using `screenshotDestination` and `playShutterSound` when capturing: **0008-screenshot-rectangle-capture**.
 - Using `recordMicrophone` and requesting microphone permission: **0010-settings-window** / **0014-microphone-audio**.
 - Swatch UI, `NSColorPanel`, `NSColor` conversion, and writing back the last-used color and width: **0018-annotation-editing**. Text-outline luminance rule: **0019-annotation-text-tool**. Image-point → pixel scaling of stroke widths: **0016-annotation-document-undo** / **0017-annotation-window-canvas**.
+
+## Verification status
+
+- Automated verification on **2026-11-02**: `xcodegen generate` succeeded; `xcodebuild -scheme Snapper -configuration Debug build` reported **BUILD SUCCEEDED**; `xcodebuild -scheme Snapper test` reported **TEST SUCCEEDED**, with **75 tests in 10 suites passing** (29 tests added by this spec).
+- No Swift compiler warnings. Xcode emitted tooling diagnostics about skipped AppIntents metadata extraction and parsing its bundled XCUIAutomation executable; the hosted test process also logged unavailable macOS service connections. These did not fail the build or tests.
+- Reused `SaveFolder.defaultURL`; no product behavior changed, so `docs/PRD.md` and `AGENTS.md` required no edits.
+- GUI behavior was not exercised. The hosted unit-test process suppresses app UI; no interactive launch or permission checks were performed.
+
+Manual verification:
+
+- [ ] **Not yet run by user:** Build and run Snapper. Confirm the `camera.viewfinder` menu bar icon appears, no Dock icon appears, left-click opens the menu, right-click opens Settings, and Quit works.
+- [ ] **Not yet run by user:** On a fresh preferences domain, run `defaults read com.thera-engineering.snapper` after launching. Confirm none of the eight `AppSettings.Key` names appear; the domain may be absent or contain only system/KeyboardShortcuts keys. Existing preferences from earlier use need not be absent.
