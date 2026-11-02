@@ -1,0 +1,5 @@
+interface:
+  display_name: "Spec Writer"
+  short_description: "Write a PRD-backed spec into docs/specs/todo, or close one out"
+policy:
+  allow_implicit_invocation: true

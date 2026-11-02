@@ -66,13 +66,15 @@ All three shortcuts can be changed in Settings.
   - The cursor becomes a crosshair.
   - Dragging draws a rectangle. The area outside it is dimmed, and a live **W × H** readout in points appears near the cursor.
   - A rectangle is confined to the display where the drag started.
-  - A click without a drag does nothing.
+  - A click without a drag does nothing. A drag smaller than 4 × 4 points counts as a click: nothing is captured and the overlay stays open.
 - **Window mode:**
-  - **Space** toggles between rectangle and window mode, either before or during a drag.
+  - **Space** toggles between rectangle and window mode, either before or during a drag. Toggling during a drag discards that drag; switching back to rectangle mode starts a fresh drag.
   - The window under the cursor is highlighted, and clicking selects it.
   - Our own windows and system UI that can't be captured are excluded from window hit-testing.
 - **Esc** cancels at any time and closes the overlay without doing anything.
 - After a selection, the overlay is removed before capture so it never appears in the output.
+- While the overlay is open, all Snapper shortcuts are ignored.
+- If a display is connected or disconnected while the overlay is open, the selection is cancelled.
 
 ## 6. Feature: Screenshot (⌘⇧4)
 
@@ -81,7 +83,8 @@ All three shortcuts can be changed in Settings.
    - Format: PNG at native pixel resolution (2× on Retina).
    - Window captures contain only that window, with no shadow, even if other windows cover it.
 3. The output depends on the **Screenshot destination** setting: *Save to file*, *Copy to clipboard*, or *Both*. The default is **Both**.
-4. The shutter sound plays if it is enabled (on by default).
+4. The shutter sound plays if it is enabled (on by default). It is the system screen-capture sound (`/System/Library/Components/CoreAudio.component/Contents/SharedSupport/SystemSounds/system/Screen Capture.aif`), falling back to `NSSound(named: "Grab")`, then `"Pop"`, if that file is missing.
+5. **Errors:** if Screen Recording permission is missing, the onboarding window opens (section 11). Any other capture failure shows a short alert with the error.
 
 ## 7. Feature: Recording (⌘⇧5)
 
@@ -90,13 +93,16 @@ All three shortcuts can be changed in Settings.
 2. **Output format:** `.mp4`, H.264, native resolution, 30 fps, cursor visible.
    - Audio: the microphone is recorded only if the *Record microphone* setting is on (off by default). System audio is never recorded.
 3. **Recording overlay** (excluded from the recording):
-   - A floating pill below the recorded area, or above it if there is no room below. It shows `elapsed time · Stop · Cancel`.
+   - A floating pill below the recorded area, or above it if there is no room below. If there is no room above either (for example, a full-screen selection), it is placed inside the area, near its bottom edge. It shows `elapsed time · Stop · Cancel` and stays on the recorded area's display.
    - A thin dashed border marks the recorded area.
+   - In window mode, the pill and the border follow the window as it moves (its frame is polled about 4 times per second).
+   - Errors: if Screen Recording permission is missing, the onboarding window opens. Any other failure to start or write the recording shows a short alert with the error.
 4. **Stopping and cancelling:**
    - **Stop** saves the file. Pressing ⌘⇧5 again or clicking the menu bar icon does the same.
    - **Cancel** discards the recording immediately without confirmation.
    - Esc does **not** cancel a recording.
    - ⌘⇧4 and ⌘⇧6 are ignored while a recording is in progress.
+   - If the recorded window closes, or the recorded display is disconnected, the recording stops and is saved as if Stop had been pressed.
 5. After saving, Finder opens the save folder with the new file **selected** (`NSWorkspace.activateFileViewerSelecting`). Recordings are not copied to the clipboard.
 
 ## 8. Feature: Annotate (⌘⇧6)
@@ -108,6 +114,7 @@ All three shortcuts can be changed in Settings.
   - initially scales the image to fit about 80% of the screen and never upscales it;
   - can be open in several copies at once.
 - Closing a window with changes that have not been saved or copied asks **"Discard changes?"**.
+- Quitting Snapper while one or more annotation windows have unsaved changes asks once: **"Quit and discard N unsaved annotations?"**.
 
 ### 8.2 Toolbar
 | Control | Shortcut | Behavior |
@@ -117,7 +124,7 @@ All three shortcuts can be changed in Settings.
 | Arrow | A | Straight line with a filled arrowhead. Shift snaps the angle to 45° |
 | Text | T | Click to place a text box (see 8.3) |
 | Color | — | Preset swatches (red, orange, yellow, green, blue, purple, black, white), plus a "+" button that opens the system color picker |
-| Stroke width | — | S / M / L |
+| Stroke width | — | S / M / L = 2 / 4 / 8 image points. The arrowhead scales with the stroke width |
 | Save | ⌘S | Save dialog pre-filled with the default folder and file name |
 | Copy | ⌘C | Copies the flattened image to the clipboard. The window stays open |
 | Undo / Redo | ⌘Z / ⇧⌘Z | Covers every edit, including moves, resizes, color changes, and text edits |
@@ -125,6 +132,8 @@ All three shortcuts can be changed in Settings.
 
 - The active tool **stays selected** after each shape is drawn.
 - The last-used color is remembered between sessions. The initial default is **red**.
+- The last-used stroke width is remembered between sessions. The initial default is **M**.
+- Esc, when no text box is being edited, deselects the selected shape. It never closes the window.
 - Changing the color or stroke width while a shape is selected applies the change to that shape.
 - Resize handles: the four corners of a rectangle and the two endpoints of an arrow.
 - ⌘C copies the image only when no text box is being edited. While editing, it copies text as usual.
@@ -147,7 +156,10 @@ All three shortcuts can be changed in Settings.
 - File names:
   - `Screenshot 2026-11-02 at 19.18.04.png`
   - `Recording 2026-11-02 at 19.18.04.mp4`
+  
+  Screenshots use the capture time, and recordings use the time the recording started.
 - On a name collision, ` (2)`, ` (3)`, and so on are added to the name.
+- If the save folder can't be created or isn't writable, an alert says "Couldn't save to <folder>" and offers a **Choose Folder…** button. With the *Both* destination, the image is still copied to the clipboard.
 
 ## 10. Settings window (SwiftUI)
 
@@ -162,13 +174,14 @@ All three shortcuts can be changed in Settings.
 - A warning appears when a binding conflicts with an enabled macOS screenshot shortcut, with a button that opens System Settings.
 
 **Recording**
-- Record microphone (default **off**). Turning it on requests microphone permission.
+- Record microphone (default **off**). Turning it on requests microphone permission. If permission is denied, the toggle switches back off and a note appears with an **Open System Settings** button.
 
 ## 11. First run and permissions
 
 - At launch, the app checks for **Screen Recording** permission and whether the **macOS screenshot shortcuts** (⌘⇧4/⌘⇧5) are enabled. If either step is needed, it shows a single **onboarding window**:
   1. Grant Screen Recording. A button opens System Settings → Privacy & Security → Screen & System Audio Recording. The window notes that macOS may require relaunching Snapper.
   2. Turn off the macOS screenshot shortcuts. A button opens System Settings → Keyboard → Keyboard Shortcuts → Screenshots.
+- Step 2 counts as done when no *enabled* macOS screenshot shortcut collides with a *current* Snapper binding. Rebinding Snapper away from the system shortcuts also satisfies it.
 - The onboarding window appears at each launch until both steps are done or the user dismisses it with "Don't show again".
 - If a shortcut fires without Screen Recording permission, the onboarding window opens instead of the overlay.
 - Microphone permission is requested only when *Record microphone* is turned on.
@@ -188,4 +201,6 @@ All three shortcuts can be changed in Settings.
 - [ ] All three shortcuts can be rebound in Settings and take effect immediately.
 - [ ] The onboarding window appears when permission is missing or the system shortcuts conflict.
 - [ ] Launch at login works from Settings.
-- [ ] The default save folder is created when it is missing.
+- [ ] The default save folder is created when it is missing. An unwritable folder shows "Couldn't save to <folder>" with **Choose Folder…**.
+- [ ] Window recordings follow the window, and closing the recorded window stops and saves the recording.
+- [ ] Closing a modified annotation window asks "Discard changes?", and quitting with unsaved annotations asks once.

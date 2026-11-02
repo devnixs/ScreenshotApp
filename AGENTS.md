@@ -60,6 +60,14 @@ Run the build and the tests before reporting work as done. Report failures as th
 - A selection is always confined to one display. Convert carefully between AppKit's bottom-left global coordinates and ScreenCaptureKit and CoreGraphics' top-left coordinates. This is the most common source of bugs, so cover it with tests.
 - Store preferences in `UserDefaults`, behind one typed settings type. Shortcuts are stored by `KeyboardShortcuts`.
 
+## Spec workflow
+
+Work is planned and built through specs in `docs/specs/`:
+- `todo/NNNN-<slug>_TODO.md`: ready-to-build specs. Numbers are global, never reused, and in dependency order.
+- `done/NNNN-<slug>_COMPLETED.md`: shipped specs, with a *Verification status* section.
+
+The **spec-writer** skill (`.agents/skills/spec-writer/`) writes specs from the PRD or a request without implementing them. The **spec-implementer** skill (`.agents/skills/spec-implementer/`) builds the todo queue in order, one sub-agent per spec, then commits each spec and moves it to `done/`. Reference the spec ID in commit messages (`0004: …`).
+
 ## Things that can't be automated
 
 Screen Recording permission, global hotkeys, overlays, and recording all need a real GUI session with TCC permission granted. Unit tests can't cover them. When a change touches these areas:
