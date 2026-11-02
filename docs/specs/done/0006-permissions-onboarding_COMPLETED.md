@@ -171,3 +171,23 @@ As a Snapper user launching the app for the first time, I see one window that te
 - Programmatically disabling macOS shortcuts (writing to `com.apple.symbolichotkeys`). Snapper only reads that domain.
 - Automatic relaunch after granting permission. The PRD asks only for a note.
 - Microphone permission (PRD §11 last bullet): **0010 / 0014**.
+
+## Verification status
+
+- **2026-11-02:** `xcodegen generate` succeeded; `xcodebuild -scheme Snapper -configuration Debug build` finished **BUILD SUCCEEDED**; `xcodebuild -scheme Snapper test` finished **TEST SUCCEEDED**, with **128 tests in 17 suites passing**, including 14 new tests for this spec.
+- Implemented the pure chord/parser/collision/decision types, read-only system-preference adapter, Screen Recording preflight and explicit user-triggered request, settings links, observable onboarding state, reusable window with activation refresh, launch check, and capture gate.
+- No PRD or AGENTS.md changes were needed: implementation follows the existing behavior and architecture. Missing Touch Bar IDs remain absent; standard screenshot IDs fall back to enabled defaults.
+- GUI/TCC behavior was **not run**. No app launch or permission request was performed. The selection overlay remains the 0005 stub until 0007.
+
+Manual verification (the numbered procedure above supplies the setup and expected results):
+
+- [ ] not yet run by user — Reset ScreenCapture permission and enable macOS screenshot shortcuts; launch and verify both steps are Needed, with action names and colliding chords.
+- [ ] not yet run by user — Trigger Screenshot without permission; verify onboarding comes forward, no overlay appears, and no duplicate window exists. Repeat for Record and Annotate using the menu if macOS intercepts the shortcut.
+- [ ] not yet run by user — Open step 1's System Settings link; verify Snapper appears in Screen & System Audio Recording and the first-click system prompt does not repeat.
+- [ ] not yet run by user — Grant permission and relaunch; verify step 1 is Done.
+- [ ] not yet run by user — Open Keyboard settings, disable the conflicting screenshot shortcuts, and return to Snapper; verify step 2 refreshes to Done.
+- [ ] not yet run by user — Quit and relaunch with both steps complete; verify onboarding stays closed.
+- [ ] not yet run by user — Re-enable a conflict and relaunch; verify onboarding returns. Once 0010 is implemented, rebind Snapper away from it and verify activation refresh clears the conflict.
+- [ ] not yet run by user — Choose Don't show again and relaunch; verify launch suppression. Revoke permission and trigger a capture; verify onboarding still opens and the mode returns to idle without an overlay.
+- [ ] not yet run by user — With permission granted, verify captures use the normal selection flow (the existing stub before 0007) instead of onboarding.
+- [ ] not yet run by user — Restore preferred Screen Recording permission and macOS shortcut settings.

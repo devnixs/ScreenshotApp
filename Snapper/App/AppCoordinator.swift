@@ -7,6 +7,7 @@ final class AppCoordinator: NSObject {
     let settings = AppSettings()
     private let logger = Logger(subsystem: "com.thera-engineering.snapper", category: "AppMode")
     private let settingsWindowController = SettingsWindowController()
+    private lazy var onboardingWindowController = OnboardingWindowController(settings: settings)
     private var statusItemController: StatusItemController?
     private var modeMachine = AppModeMachine()
 
@@ -19,6 +20,11 @@ final class AppCoordinator: NSObject {
             KeyboardShortcuts.onKeyDown(for: purpose.shortcutName) { [weak self] in
                 self?.send(.shortcut(purpose))
             }
+        }
+        let model = OnboardingModel()
+        model.refresh()
+        if OnboardingDecision.shouldShowAtLaunch(status: model.status, dismissed: settings.onboardingDismissed) {
+            showOnboarding()
         }
     }
 
@@ -43,10 +49,16 @@ final class AppCoordinator: NSObject {
     }
 
     private func beginSelection(for purpose: CapturePurpose) {
-        // Permission gate (0006): if Screen Recording permission is missing, open onboarding and send(.selectionCancelled).
+        if OnboardingDecision.shouldGateCapture(permissionGranted: ScreenRecordingPermission.isGranted) {
+            send(.selectionCancelled)
+            showOnboarding()
+            return
+        }
         logger.info("Overlay requested for \(purpose.rawValue, privacy: .public) (not implemented until 0007)")
         send(.selectionCancelled)
     }
+
+    func showOnboarding() { onboardingWindowController.show() }
 
     func openSettings() { settingsWindowController.show() }
     @objc func openSettings(_ sender: Any?) { openSettings() }
