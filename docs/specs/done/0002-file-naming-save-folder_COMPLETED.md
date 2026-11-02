@@ -179,3 +179,12 @@ struct SaveFolder: Sendable {
 - Writing PNG data and recording files, and revealing them in Finder: 0008 and 0011.
 - The annotation save panel's default folder and name: 0020, which reuses `FileNamer.fileName(for: .screenshot, date:)` and `AppSettings.saveFolderURL`.
 - Security-scoped bookmarks: not needed, because the app isn't sandboxed (PRD §2, §3).
+
+## Verification status
+
+- Verified 2026-11-02: `xcodegen generate` succeeded.
+- `xcodebuild -scheme Snapper -configuration Debug build`: **BUILD SUCCEEDED**.
+- `xcodebuild -scheme Snapper test`: **TEST SUCCEEDED**; 46 tests in 7 suites passed, including 28 new file-naming/save-folder tests. Both POSIX permission tests ran under the normal user account; none were skipped.
+- No PRD or AGENTS.md change was needed: this implements the specified building blocks without wiring callers or changing app behavior.
+- Required manual verification: none for this spec. Capture/save integration checks remain in 0008 and 0011.
+- [ ] not yet run by user — Optional app-shell sanity check: launch the built app and confirm the menu bar icon is present and no Dock icon appears. The agent did not launch the app or verify GUI behavior.
