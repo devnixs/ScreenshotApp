@@ -116,9 +116,9 @@ or clicking the menu bar icon during a recording stops it.
 - **`Snapper/App/ShortcutNames.swift`** — new. `import KeyboardShortcuts`:
   ```swift
   extension KeyboardShortcuts.Name {
-      static let screenshot = Self(CapturePurpose.screenshot.rawValue, default: .init(.four,  modifiers: [.command, .shift]))
-      static let record     = Self(CapturePurpose.record.rawValue,     default: .init(.five,  modifiers: [.command, .shift]))
-      static let annotate   = Self(CapturePurpose.annotate.rawValue,   default: .init(.six,   modifiers: [.command, .shift]))
+      static let screenshot = Self(CapturePurpose.screenshot.rawValue, initial: .init(.four,  modifiers: [.command, .shift]))
+      static let record     = Self(CapturePurpose.record.rawValue,     initial: .init(.five,  modifiers: [.command, .shift]))
+      static let annotate   = Self(CapturePurpose.annotate.rawValue,   initial: .init(.six,   modifiers: [.command, .shift]))
   }
   extension CapturePurpose {
       var shortcutName: KeyboardShortcuts.Name { switch self { … } }
@@ -197,9 +197,9 @@ or clicking the menu bar icon during a recording stops it.
       shows the new keys; an unbound shortcut shows no key equivalent.
 - [ ] Left-click on the icon opens the menu; right-click (or ⌃-click) opens Settings — now routed via
       the machine.
-- [ ] `AppModeMachine` implements the transition table above exactly; all cells are covered by unit tests.
-- [ ] Shortcut name identifiers are `"screenshot"`, `"record"`, `"annotate"`.
-- [ ] App builds with Swift 6 strict concurrency and all tests pass.
+- [x] `AppModeMachine` implements the transition table above exactly; all cells are covered by unit tests.
+- [x] Shortcut name identifiers are `"screenshot"`, `"record"`, `"annotate"`.
+- [x] App builds with Swift 6 strict concurrency and all tests pass.
 
 ## Edge cases
 
@@ -298,3 +298,40 @@ or clicking the menu bar icon during a recording stops it.
 - Stopping the recording, red `record.circle` icon while recording — 0011. Pill Stop/Cancel — 0012.
 - Settings → Shortcuts tab with recorder fields and conflict warnings — 0010; system-shortcut conflict
   detection for onboarding — 0006.
+
+## Verification status
+
+- 2026-11-02: `xcodegen generate` succeeded.
+- 2026-11-02: `xcodebuild -scheme Snapper -configuration Debug build` **BUILD SUCCEEDED** with Swift 6.
+- 2026-11-02: `xcodebuild -scheme Snapper test` **TEST SUCCEEDED** — 114 tests in 13 suites green.
+  `AppModeMachineTests` covers all 55 state/event combinations with literal expected results,
+  repeated stop requests, recording-end recovery, and cancellation/completion cycles.
+  Added stable-purpose identifier tests and menu-purpose mapping tests; updated secondary-click
+  normalization tests so the state machine owns all action decisions.
+- No GUI behavior was run or claimed verified. Selection and recording actions remain the planned
+  log stubs. KeyboardShortcuts 3.1.0 uses `initial:` for the specified default shortcuts; menu items
+  use its live `setShortcut(for:)` observer. PRD and AGENTS.md required no behavior or architecture changes.
+- The builds emit the routine AppIntents metadata-extraction warning because there is no
+  AppIntents.framework dependency. Hosted tests also emit macOS `linkd.autoShortcut` connection
+  diagnostics; the full test run passes.
+
+Manual verification (all pending in a real GUI session):
+
+- [ ] Not yet run by user: disable conflicting macOS screenshot shortcuts in System Settings →
+  Keyboard → Keyboard Shortcuts → Screenshots (test plan step 1).
+- [ ] Not yet run by user: start the AppMode log stream shown in test plan step 2.
+- [ ] Not yet run by user: launch Snapper and left-click; confirm the native menu and default
+  ⌘⇧4 / ⌘⇧5 / ⌘⇧6 equivalents plus `statusItemClicked(left)` → `openMenu`.
+- [ ] Not yet run by user: right-click and Control-click; confirm Settings opens and the log shows
+  `openSettings` for each secondary click.
+- [ ] Not yet run by user: press each shortcut with Finder frontmost; confirm the matching
+  shortcut event, overlay-request stub, and immediate selection-cancelled return to idle.
+- [ ] Not yet run by user: choose each capture menu item and confirm equivalent `menuItem` log events.
+- [ ] Not yet run by user: quit, apply the ⌘⇧7 screenshot and disabled annotate defaults commands
+  in test plan step 7, then relaunch; confirm updated menu equivalents and shortcut dispatch, with
+  Annotate still available from the menu.
+- [ ] Not yet run by user: delete those two preferences and relaunch; confirm the three defaults return.
+
+Overlay-time suppression and recording-time stop behavior are unit-tested here; real GUI checks
+remain deferred to 0007 and 0011. Immediate in-app rebinding remains deferred to 0010's recorder UI.
+Rebuilding with a different signature can reset Screen Recording permission.

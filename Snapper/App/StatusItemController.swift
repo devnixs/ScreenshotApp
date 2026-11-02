@@ -1,7 +1,8 @@
 import AppKit
+import KeyboardShortcuts
 
 @MainActor
-final class StatusItemController: NSObject {
+final class StatusItemController: NSObject, NSMenuDelegate {
     private weak var coordinator: AppCoordinator?
     private let statusItem: NSStatusItem
     private let menu = NSMenu()
@@ -11,6 +12,7 @@ final class StatusItemController: NSObject {
         self.coordinator = coordinator
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         super.init()
+        menu.delegate = self
         for entry in StatusMenuLayout.entries {
             guard let title = entry.title else {
                 menu.addItem(.separator())
@@ -18,6 +20,9 @@ final class StatusItemController: NSObject {
             }
             let item = NSMenuItem(title: title, action: #selector(performMenuAction(_:)), keyEquivalent: "")
             item.target = self
+            if let purpose = entry.capturePurpose {
+                item.setShortcut(for: purpose.shortcutName)
+            }
             menuItems.append((entry, item))
             menu.addItem(item)
         }
@@ -28,7 +33,7 @@ final class StatusItemController: NSObject {
             button.toolTip = "Snapper"
             button.target = self
             button.action = #selector(handleClick(_:))
-            button.sendAction(on: [.leftMouseDown, .rightMouseDown])
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
     }
 
@@ -36,32 +41,36 @@ final class StatusItemController: NSObject {
         menuItems.first { $0.entry == entry }?.item
     }
 
+    func showMenu() {
+        guard let button = statusItem.button else { return }
+        statusItem.menu = menu
+        button.performClick(nil)
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        statusItem.menu = nil
+    }
+
     @objc private func handleClick(_ sender: Any?) {
         let event = NSApp.currentEvent
-        let button: StatusItemMouseButton?
+        let mouseButton: StatusItemButton?
         switch event?.type {
-        case .leftMouseDown: button = .left
-        case .rightMouseDown: button = .right
-        default: button = nil
+        case .leftMouseUp: mouseButton = .left
+        case .rightMouseUp: mouseButton = .right
+        default: mouseButton = nil
         }
-        switch StatusItemClickRouter.action(
-            button: button, controlKeyDown: event?.modifierFlags.contains(.control) ?? false
-        ) {
-        case .showMenu:
-            statusItem.menu = menu
-            statusItem.button?.performClick(nil)
-            statusItem.menu = nil
-        case .openSettings:
-            coordinator?.openSettings()
-        }
+        let button = StatusItemClickRouter.button(
+            mouseButton: mouseButton, controlKeyDown: event?.modifierFlags.contains(.control) ?? false
+        )
+        coordinator?.send(.statusItemClicked(button))
     }
 
     @objc private func performMenuAction(_ sender: NSMenuItem) {
         guard let entry = menuItems.first(where: { $0.item === sender })?.entry else { return }
         switch entry {
-        case .screenshot: coordinator?.startScreenshot()
-        case .record: coordinator?.startRecording()
-        case .annotate: coordinator?.startAnnotate()
+        case .screenshot: coordinator?.send(.menuItem(.screenshot))
+        case .record: coordinator?.send(.menuItem(.record))
+        case .annotate: coordinator?.send(.menuItem(.annotate))
         case .settings: coordinator?.openSettings()
         case .quit: coordinator?.quit()
         case .separator: break

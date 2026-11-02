@@ -1,6 +1,15 @@
 enum StatusMenuEntry: Equatable {
     case screenshot, record, annotate, separator, settings, quit
 
+    var capturePurpose: CapturePurpose? {
+        switch self {
+        case .screenshot: .screenshot
+        case .record: .record
+        case .annotate: .annotate
+        case .separator, .settings, .quit: nil
+        }
+    }
+
     var title: String? {
         switch self {
         case .screenshot: "Screenshot"

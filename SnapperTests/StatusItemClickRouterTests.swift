@@ -2,24 +2,24 @@ import Testing
 @testable import Snapper
 
 struct StatusItemClickRouterTests {
-    @Test func primaryClickShowsMenu() {
-        #expect(StatusItemClickRouter.action(button: .left, controlKeyDown: false) == .showMenu)
+    @Test func primaryClickNormalizesToLeft() {
+        #expect(StatusItemClickRouter.button(mouseButton: .left, controlKeyDown: false) == .left)
     }
 
-    @Test func controlClickOpensSettings() {
-        #expect(StatusItemClickRouter.action(button: .left, controlKeyDown: true) == .openSettings)
+    @Test func controlClickNormalizesToRight() {
+        #expect(StatusItemClickRouter.button(mouseButton: .left, controlKeyDown: true) == .right)
     }
 
-    @Test func secondaryClickOpensSettings() {
-        #expect(StatusItemClickRouter.action(button: .right, controlKeyDown: false) == .openSettings)
+    @Test func secondaryClickNormalizesToRight() {
+        #expect(StatusItemClickRouter.button(mouseButton: .right, controlKeyDown: false) == .right)
     }
 
-    @Test func secondaryControlClickOpensSettings() {
-        #expect(StatusItemClickRouter.action(button: .right, controlKeyDown: true) == .openSettings)
+    @Test func secondaryControlClickNormalizesToRight() {
+        #expect(StatusItemClickRouter.button(mouseButton: .right, controlKeyDown: true) == .right)
     }
 
-    @Test func accessibilityPressShowsMenu() {
-        #expect(StatusItemClickRouter.action(button: nil, controlKeyDown: false) == .showMenu)
-        #expect(StatusItemClickRouter.action(button: nil, controlKeyDown: true) == .showMenu)
+    @Test func accessibilityPressNormalizesToLeft() {
+        #expect(StatusItemClickRouter.button(mouseButton: nil, controlKeyDown: false) == .left)
+        #expect(StatusItemClickRouter.button(mouseButton: nil, controlKeyDown: true) == .left)
     }
 }

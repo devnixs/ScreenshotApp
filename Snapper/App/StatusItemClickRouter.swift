@@ -1,17 +1,10 @@
-enum StatusItemMouseButton {
-    case left, right
-}
-
-enum StatusItemClickAction: Equatable {
-    case showMenu, openSettings
-}
-
+/// Normalizes mouse and accessibility presses; AppModeMachine decides their meaning.
 enum StatusItemClickRouter {
-    static func action(button: StatusItemMouseButton?, controlKeyDown: Bool) -> StatusItemClickAction {
-        switch button {
-        case .right: .openSettings
-        case .left: controlKeyDown ? .openSettings : .showMenu
-        case nil: .showMenu
+    static func button(mouseButton: StatusItemButton?, controlKeyDown: Bool) -> StatusItemButton {
+        switch mouseButton {
+        case .right: .right
+        case .left: controlKeyDown ? .right : .left
+        case nil: .left
         }
     }
 }
