@@ -1,0 +1,59 @@
+name: Snapper
+options:
+  bundleIdPrefix: com.thera-engineering
+  deploymentTarget:
+    macOS: "15.0"
+  createIntermediateGroups: true
+packages:
+  KeyboardShortcuts:
+    url: https://github.com/sindresorhus/KeyboardShortcuts
+    exactVersion: 3.1.0
+targets:
+  Snapper:
+    type: application
+    platform: macOS
+    sources: [Snapper]
+    dependencies:
+      - package: KeyboardShortcuts
+    entitlements:
+      path: Snapper/Snapper.entitlements
+      properties:
+        com.apple.security.device.audio-input: true
+    configFiles:
+      Debug: Config/Signing.xcconfig
+      Release: Config/Signing.xcconfig
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.thera-engineering.snapper
+        PRODUCT_NAME: Snapper
+        MACOSX_DEPLOYMENT_TARGET: "15.0"
+        SWIFT_VERSION: "6.0"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_LSUIElement: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Snapper
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.utilities
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: Snapper records your microphone when Record microphone is on.
+        INFOPLIST_KEY_NSHumanReadableCopyright: © 2026 Thera Engineering
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+      configs:
+        Debug:
+          ENABLE_HARDENED_RUNTIME: NO
+        Release:
+          ENABLE_HARDENED_RUNTIME: YES
+    scheme:
+      testTargets: [SnapperTests]
+  SnapperTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources: [SnapperTests]
+    dependencies:
+      - target: Snapper
+    configFiles:
+      Debug: Config/Signing.xcconfig
+      Release: Config/Signing.xcconfig
+    settings:
+      base:
+        SWIFT_VERSION: "6.0"
+        MACOSX_DEPLOYMENT_TARGET: "15.0"
+        GENERATE_INFOPLIST_FILE: YES

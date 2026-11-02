@@ -307,3 +307,42 @@ Left-clicking it shows the Snapper menu, right-clicking opens Settings, and *Qui
   behavior: **0016**/**0018**. This spec only provides the menu routing.
 - App icon artwork (`AppIcon` asset), notarization, and Release distribution packaging. They are not
   required for v1 development (PRD §3: direct distribution, signed with the developer's certificate).
+
+## Verification status
+
+Automated verification on **2026-11-02** (Xcode 26.3, XcodeGen 2.46.0):
+- `xcodegen generate`: passed.
+- `xcodebuild -scheme Snapper -configuration Debug build`: **BUILD SUCCEEDED**.
+- `xcodebuild -scheme Snapper test`: **TEST SUCCEEDED**, **18 tests in 5 suites**, zero failures.
+  The hosted smoke tests confirm the app bundle identifier and that the actual test-host environment
+  activates the UI-suppression guard. No Swift 6 concurrency errors.
+- Inspected built Info.plist: `LSUIElement = true`, bundle identifier
+  `com.thera-engineering.snapper`, `LSMinimumSystemVersion = 15.0`, microphone usage description present.
+- Resolved package list contains only KeyboardShortcuts **3.1.0**. Generated `.xcodeproj` is ignored;
+  no build products or user data are staged.
+- The initial build emitted Xcode's benign App Intents metadata-extraction warning (no AppIntents
+  dependency); the hosted test process emitted macOS `com.apple.linkd.autoShortcut` connection logs.
+  Both commands succeeded. No app GUI behavior was manually verified.
+- PRD and AGENTS.md require no changes: this spec adds the planned internal foundation and does not
+  change approved product behavior or repository commands.
+
+Manual verification — all pending:
+- [ ] not yet run by user: Launch the built app; verify the viewfinder status icon, no Dock icon,
+  and no Snapper entry in ⌘Tab. If a notch hides the icon, make room by quitting other menu bar apps.
+- [ ] not yet run by user: Switch Light/Dark appearance; verify the template icon stays legible.
+- [ ] not yet run by user: Left-click; verify Screenshot, Record, Annotate, separator, Settings…,
+  Quit Snapper in order with no shortcuts. Verify the three capture actions only log their stub
+  message in Console (subsystem `com.thera-engineering.snapper`).
+- [ ] not yet run by user: Right-click with another app frontmost; verify Settings opens in front
+  without opening a status menu.
+- [ ] not yet run by user: Control-click; verify the same Settings behavior.
+- [ ] not yet run by user: Reopen Settings through the status menu; verify the same single window.
+- [ ] not yet run by user: Move Settings to another Space or behind another app; right-click the
+  icon and verify the existing window comes to the current Space and front.
+- [ ] not yet run by user: Press ⌘W in Settings; verify it closes while Snapper keeps running.
+- [ ] not yet run by user: Reopen Settings and press ⌘Q; verify Snapper quits and the icon disappears.
+- [ ] not yet run by user: Relaunch and choose Quit Snapper from the status menu; verify it quits.
+
+Ad hoc signing is the specified development default. Rebuilding with a different signature can
+reset Screen Recording permission; use `Config/Local.xcconfig` with a real team identity when
+iterating on future capture specs, as documented in `Config/Signing.xcconfig`.
