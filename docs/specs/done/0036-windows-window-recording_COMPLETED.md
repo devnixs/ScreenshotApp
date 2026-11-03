@@ -24,7 +24,7 @@ Tests to port: `SnapperTests/WindowTrackingReducerTests.swift:8-71`, `SnapperTes
 
 What lower-numbered Windows specs provide (all not yet implemented at the time of writing; names come from the batch ownership table):
 
-- 0028: Core `Geometry/` primitives (`PixelPoint`, `PixelSize`, `PixelRect`), `DisplayInfo`, `DisplayGeometry`, and `WindowDisplayRule` (display with the largest overlap, `null` if none). Windows `Capture/DisplayInfoProvider` and `Capture/DisplayChangeWatcher`.
+- 0028: Core `Geometry/` primitives (`PixelPoint`, `PixelSize`, `PixelRect`), `DisplayInfo`, `DisplayGeometry`, and `WindowDisplayRule` (display with the largest overlap, nearest-display fallback if none; visibility uses `DisplayGeometry.DisplayOverlapping` for positive overlap). Windows `Capture/DisplayInfoProvider` and `Capture/DisplayChangeWatcher`.
 - 0031: Windows `Interop/Direct3D11Helper` (D3D11 device created with `D3D11_CREATE_DEVICE_BGRA_SUPPORT`, WinRT `IDirect3DDevice` wrapping, `IGraphicsCaptureItemInterop`, `IDirect3DDxgiInterfaceAccess`) and Core `Capture/CaptureCrop`.
 - 0032: window selection — `SelectionResult` window case carrying the `HWND` and its extended frame bounds (`PixelRect`), the window candidate provider (`DwmGetWindowAttribute(DWMWA_EXTENDED_FRAME_BOUNDS)`, `DWMWA_CLOAKED`), and the WGC `CreateForWindow` screenshot that is cropped from the WGC window frame to the extended frame bounds.
 - 0034: `RecordingSession` (WGC capture + `Mp4Writer`/`IMFSinkWriter`, 30 fps cap, cursor on, `IsBorderRequired = false`, frames timestamped by capture time with the last frame held), Core `RecordingConfiguration` (rectangle variant with even-floor rounding), `RecordingLifecycle`, `RecordingTerminationDecision`, `ShutdownBlocker`, Explorer reveal and error alerts. **Interim behavior before this spec:** 0034 records a window selection as a rectangle of the window's extended frame on its largest-overlap monitor. That recording doesn't follow the window and includes anything covering it. This spec replaces that path.
@@ -166,7 +166,7 @@ As a Snapper user on Windows 11, I press Ctrl+Shift+5, press Space, and click a 
     - Spanning primary and the left monitor `(-300, 100, 1000, 600)` → on-screen.
     - `IsMinimized` with frame `(-32000, -32000, 160, 28)` → `Present(frame, false)`. `IsCloaked` → off-screen. `IsVisible == false` → off-screen.
     - A frame that touches no monitor (`(10000, 10000, 100, 100)`) or, with only the primary in the display list, only shares its right edge (`(1920, 500, 100, 100)`) → off-screen.
-    - Pill display: `WindowDisplayRule` on `(-300, 100, 1000, 600)` picks the primary (700 px vs 300 px overlap); on `(-700, 100, 1000, 600)` picks the left monitor; on `(10000, 10000, 100, 100)` returns `null` (port of `WindowTrackingReducerTests.swift:60-70`; put these in 0028's `WindowDisplayRuleTests.cs` if that's where the rule's tests live, without duplicating existing cases).
+    - Pill display: `WindowDisplayRule` on `(-300, 100, 1000, 600)` picks the primary (700 px vs 300 px overlap); on `(-700, 100, 1000, 600)` picks the left monitor; `DisplayGeometry.DisplayOverlapping` on `(10000, 10000, 100, 100)` returns `null` (port of `WindowTrackingReducerTests.swift:60-70`; put these in 0028's `WindowDisplayRuleTests.cs` if that's where the rule's tests live, without duplicating existing cases).
   - `LetterboxFitTests.cs`:
     - 800 × 600 into 800 × 600 → `(0, 0, 800, 600)`, `IsIdentity == true`.
     - 1600 × 600 into 800 × 600 → `(0, 150, 800, 300)`, not identity (wider window → letterbox).
@@ -214,3 +214,27 @@ As a Snapper user on Windows 11, I press Ctrl+Shift+5, press Space, and click a 
 - Microphone audio: 0037. MP4 quality re-encode: 0045. GIF: 0046. Window recordings inherit them, with the fixed output size and `Scale` from this spec.
 - Changing the output size mid-recording or restarting the capture on resize (impossible within one H.264 track).
 - Recording several windows or a whole app: not in the PRD.
+
+
+## Verification status
+
+Automated verification on 2026-11-03: `dotnet build windows/Snapper.slnx -c Debug` passed with **0 warnings and 0 errors**; `dotnet test windows/Snapper.slnx` passed **848 tests**, including **45 new cases**, with no skips. The new tests cover window output sizing/flags, scale-independent physical coordinates, letterbox placement, crop fallback, probe classification and tracking transitions. Existing tests cover duplicate-close lifecycle handling, unclipped window borders and reachable hidden pills. No macOS sources, PRD or AGENTS.md changes were needed.
+
+Implementation notes: `RecordingConfigurationBuilder.BuildWindow` follows the existing builder naming. `WindowFrameCrop` reuses `WindowCaptureCrop` and adds the recording-only full-content fallback for transient inconsistent bounds. The existing `WindowDisplayRule` deliberately provides a nearest-display fallback; visibility is therefore checked with the existing positive-overlap helper before display assignment. The native-resolution compositor bypasses Direct2D; scaling uses the shared immediate-context lock, opaque black bars and high-quality cubic interpolation. Window pools resize only after their current frame is disposed, and the tracker is disposed through every overlay-dismissal path.
+
+Windows GUI/capture/encoding behavior has **not** been run. On Windows 11:
+
+- [ ] not yet run by user: Record a Notepad window with Ctrl+Shift+5 → Space → click; confirm immediate recording, red tray icon, pill and dashed border.
+- [ ] not yet run by user: Move Notepad near screen edges; confirm the border/pill follow within about 250 ms and the pill uses below/above/inside placement.
+- [ ] not yet run by user: Cover the recorded window with another window, type, and Stop; confirm one revealed MP4 containing only the selected window, no shadow/resize margins/covering window/pill/border, visible cursor, and even starting pixel dimensions.
+- [ ] not yet run by user: Move a recording between 100% and 150%/200% monitors; confirm uninterrupted recording, aligned controls and fixed video dimensions with aspect-preserving scaling.
+- [ ] not yet run by user: Repeat movement on a monitor left of or above the primary; confirm alignment at negative virtual-screen coordinates.
+- [ ] not yet run by user: Resize, maximize and restore the window; confirm the video keeps its starting dimensions, uses black bars as needed, and has no maximized off-screen margins.
+- [ ] not yet run by user: Minimize for three seconds, then restore; confirm recording continues, border hides/returns, pill stays usable, and playback holds the last frame while minimized.
+- [ ] not yet run by user: Move the window to another virtual desktop and back; confirm the border hides/returns and the pill remains reachable.
+- [ ] not yet run by user: Close the recorded window with Alt+F4; confirm one save/reveal, overlays disappear and the tray returns to idle.
+- [ ] not yet run by user: End the recorded app in Task Manager; confirm the same single-save behavior.
+- [ ] not yet run by user: Stop with Ctrl+Shift+5 and a tray click; confirm save/reveal without a menu. Cancel with the pill; confirm no recording file remains.
+- [ ] not yet run by user: Disconnect a window recording's monitor; confirm recording follows onto the remaining monitor and the pill stays reachable. A rectangle recording on that monitor must still stop and save.
+- [ ] not yet run by user: Sign out while recording a window; confirm the shutdown saving reason and saved file.
+- [ ] not yet run by user: Repeat rectangle recording checks from 0034/0035; confirm unchanged capture, stop/cancel and overlay behavior.

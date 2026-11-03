@@ -30,7 +30,8 @@ internal sealed class Mp4Writer : IDisposable
     private IMFDXGIDeviceManager? manager;
     private IMFVideoSampleAllocatorEx? allocator;
     private IMFSample? lastSample;
-    private ID3D11Texture2D? staging;
+    private ID3D11Texture2D? staging, compositionTexture;
+    private LetterboxCompositor? compositor;
     private uint videoStream;
     private long samplesWritten;
     private long? holdTime;
@@ -101,6 +102,8 @@ internal sealed class Mp4Writer : IDisposable
             while (queue.TryTake(out var queued)) Release(queued.Sample);
             Release(lastSample); lastSample = null;
             Release(staging); staging = null;
+            Release(compositionTexture); compositionTexture = null;
+            compositor?.Dispose(); compositor = null;
             ReleaseSink();
             if (runtimeActive) WriterEnded();
             Completed.Set();
@@ -221,7 +224,13 @@ internal sealed class Mp4Writer : IDisposable
                 try
                 {
                     var box = new D3D11_BOX { left = (uint)crop.Left, top = (uint)crop.Top, right = (uint)crop.Right, bottom = (uint)crop.Bottom, back = 1 };
-                    lock (device.ContextLock) device.Context.CopySubresourceRegion(target, 0, 0, 0, 0, source, 0, &box);
+                    if (configuration.FollowsWindow)
+                    {
+                        var fit = LetterboxFit.Fit(crop.Size, new(configuration.PixelWidth, configuration.PixelHeight))
+                            ?? throw new InvalidOperationException("The window frame is empty.");
+                        (compositor ??= new(device)).Compose(source, target, crop, fit);
+                    }
+                    else lock (device.ContextLock) device.Context.CopySubresourceRegion(target, 0, 0, 0, 0, source, 0, &box);
                 }
                 finally { Release(target); Release(source); }
                 return sample;
@@ -238,7 +247,15 @@ internal sealed class Mp4Writer : IDisposable
             try
             {
                 var box = new D3D11_BOX { left = (uint)crop.Left, top = (uint)crop.Top, right = (uint)crop.Right, bottom = (uint)crop.Bottom, back = 1 };
-                device.Context.CopySubresourceRegion(staging, 0, 0, 0, 0, source, 0, &box);
+                if (configuration.FollowsWindow)
+                {
+                    compositionTexture ??= LetterboxCompositor.CreateOutputTexture(device, configuration.PixelWidth, configuration.PixelHeight);
+                    var fit = LetterboxFit.Fit(crop.Size, new(configuration.PixelWidth, configuration.PixelHeight))
+                        ?? throw new InvalidOperationException("The window frame is empty.");
+                    (compositor ??= new(device)).Compose(source, compositionTexture, crop, fit);
+                    device.Context.CopyResource(staging, compositionTexture);
+                }
+                else device.Context.CopySubresourceRegion(staging, 0, 0, 0, 0, source, 0, &box);
                 D3D11_MAPPED_SUBRESOURCE mapped;
                 device.Context.Map(staging, 0, D3D11_MAP.D3D11_MAP_READ, 0, &mapped);
                 try

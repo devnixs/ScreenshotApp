@@ -63,6 +63,8 @@ internal abstract class RecordingOverlayWindow : Window
         if (message == PInvoke.WM_DPICHANGED)
         {
             watcher.Recheck();
+            // The border may span monitors; its physical frame is authoritative, never the suggested DPI rect.
+            if (clickThrough) handled = true;
             Dispatcher.BeginInvoke(() => { if (frame is { } current) SetPixelFrame(current); });
         }
         return 0;

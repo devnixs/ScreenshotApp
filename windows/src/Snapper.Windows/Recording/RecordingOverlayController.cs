@@ -85,7 +85,7 @@ internal sealed class RecordingOverlayController
         var current = DisplayInfoProvider.GetCurrent();
         var fresh = followsWindow ? DisplayGeometry.DisplayOverlapping(RectD.FromPixelRect(recordedRect), current) : null;
         fresh ??= current.FirstOrDefault(d => d.DeviceName == display.DeviceName);
-        if (followsWindow) fresh ??= current.FirstOrDefault();
+        if (followsWindow) fresh ??= DisplayGeometry.PrimaryDisplay(current);
         if (fresh is null) return false;
         display = fresh;
         return true;

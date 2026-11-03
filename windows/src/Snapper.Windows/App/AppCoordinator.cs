@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using Windows.Win32;
+using Windows.Win32.Foundation;
 using Snapper.Core.Geometry;
 using Snapper.Core.Recording;
 using Snapper.Windows.Recording;
@@ -26,6 +28,7 @@ internal sealed class AppCoordinator : IDisposable
     private bool disposed;
     private RecordingSession? recording;
     private RecordingOverlayController? recordingOverlay;
+    private WindowFrameTracker? windowTracker;
     private readonly RecordingTerminationDecision termination = new();
     private ShutdownBlocker? shutdownBlocker;
     private readonly SelectionOverlayController overlay;
@@ -124,23 +127,29 @@ internal sealed class AppCoordinator : IDisposable
     {
         var startDate = DateTimeOffset.Now;
         DisplayInfo display;
-        RectD region;
+        RecordingConfiguration configuration;
+        WindowRecordingSource? window = null;
         try
         {
             switch (selection)
             {
-                case RectSelection(var selectedDisplay, var rect): display = selectedDisplay; region = RectD.FromPixelRect(rect); break;
-                case WindowSelectionResult(_, var frame, _):
-                    // 0036: window selections temporarily record a fixed monitor rectangle, including covering windows.
-                    region = RectD.FromPixelRect(frame);
+                case RectSelection(var selectedDisplay, var rect):
+                    display = selectedDisplay;
+                    configuration = RecordingConfigurationBuilder.Build(display, RectD.FromPixelRect(rect));
+                    break;
+                case WindowSelectionResult(var handle, _, _):
+                    var hwnd = new HWND(handle);
+                    var thread = PInvoke.GetWindowThreadProcessId(hwnd, out _);
+                    if (!PInvoke.IsWindow(hwnd) || thread == 0 || !WindowFrameTracker.TryGetFrames(hwnd, out var rawFrame, out var frame))
+                        throw new WindowUnavailableException();
+                    var region = RectD.FromPixelRect(frame);
                     display = WindowDisplayRule.Display(region, Displays.Current)
                         ?? throw new InvalidOperationException("The window is no longer on a display.");
-                    if (DisplayGeometry.DisplayOverlapping(region, [display]) is null)
-                        throw new InvalidOperationException("The window is no longer on a display.");
+                    configuration = RecordingConfigurationBuilder.BuildWindow(frame, display.Scale);
+                    window = new(handle, thread, rawFrame, frame);
                     break;
                 default: throw new UnreachableException();
             }
-            var configuration = RecordingConfigurationBuilder.Build(display, region);
             string path;
             try { path = RecordingFilePath.Reserve(Settings.SaveFolder, startDate); }
             catch (Exception error) when (ScreenshotOutputPlan.ClassifySaveFailure(error) == SaveFailureAlert.SaveFolder)
@@ -153,13 +162,18 @@ internal sealed class AppCoordinator : IDisposable
             recording = new RecordingSession(configuration, display, path, d3d, Displays,
                 onStarted: () =>
                 {
-                    var recordedRect = new PixelRect(display.Bounds.X + configuration.SourceRect.X,
+                    var recordedRect = window?.ExtendedFrame ?? new PixelRect(display.Bounds.X + configuration.SourceRect.X,
                         display.Bounds.Y + configuration.SourceRect.Y, configuration.PixelWidth, configuration.PixelHeight);
                     // Pill and border set WDA_EXCLUDEFROMCAPTURE before first show; Windows has no app-level filter.
-                    recordingOverlay = new RecordingOverlayController(display, recordedRect, followsWindow: false,
+                    recordingOverlay = new RecordingOverlayController(display, recordedRect, followsWindow: window is not null,
                         Stopwatch.GetTimestamp(), StopRecording, CancelRecording, Displays);
                     recordingOverlay.Show();
-                }, onStopping: DismissRecordingOverlay, onEnded: RecordingEnded);
+                    if (window is not null)
+                    {
+                        windowTracker = new WindowFrameTracker(new HWND(window.Handle), window.ThreadId, window.ExtendedFrame, WindowTrackingChanged);
+                        windowTracker.Start();
+                    }
+                }, onStopping: DismissRecordingOverlay, onEnded: RecordingEnded, window: window);
             tray?.SetRecording(true);
             shutdownBlocker?.SetReason(RecordingTerminationDecision.ShutdownBlockReason);
             recording.Start();
@@ -174,8 +188,30 @@ internal sealed class AppCoordinator : IDisposable
             ErrorAlerts.ShowError("Couldn't record the screen", error.Message);
         }
     }
+    private void WindowTrackingChanged(WindowTrackingEvent e)
+    {
+        switch (e)
+        {
+            case WindowTrackingEvent.Moved(var frame): UpdateWindowOverlay(frame); break;
+            case WindowTrackingEvent.Shown(var frame): UpdateWindowOverlay(frame); break;
+            case WindowTrackingEvent.Hidden: recordingOverlay?.SetBorderVisible(false); break;
+            case WindowTrackingEvent.Closed: StopRecording(); break;
+        }
+    }
+    private void UpdateWindowOverlay(PixelRect frame)
+    {
+        var region = RectD.FromPixelRect(frame);
+        // Display assignment has a nearest-display fallback; visibility requires positive overlap.
+        if (DisplayGeometry.DisplayOverlapping(region, Displays.Current) is null)
+        { recordingOverlay?.SetBorderVisible(false); return; }
+        var display = WindowDisplayRule.Display(region, Displays.Current);
+        if (display is null) { recordingOverlay?.SetBorderVisible(false); return; }
+        recordingOverlay?.Update(frame, display);
+        recordingOverlay?.SetBorderVisible(true);
+    }
     private void DismissRecordingOverlay()
     {
+        windowTracker?.Dispose(); windowTracker = null;
         recordingOverlay?.Dismiss();
         recordingOverlay = null;
     }

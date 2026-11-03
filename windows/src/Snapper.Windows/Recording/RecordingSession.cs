@@ -17,6 +17,7 @@ internal sealed class RecordingSession
     private readonly DisplayChangeWatcher displays;
     private readonly RecordingConfiguration configuration;
     private readonly DisplayInfo display;
+    private readonly WindowRecordingSource? window;
     private readonly string outputPath;
     private readonly Action onStarted, onStopping, onEnded;
     private readonly DispatcherTimer startTimer, stopTimer;
@@ -27,9 +28,9 @@ internal sealed class RecordingSession
     private Task? cleanup, startup, deletion;
     private bool ended;
     public RecordingSession(RecordingConfiguration configuration, DisplayInfo display, string outputPath,
-        Direct3D11Helper helper, DisplayChangeWatcher displays, Action onStarted, Action onStopping, Action onEnded)
+        Direct3D11Helper helper, DisplayChangeWatcher displays, Action onStarted, Action onStopping, Action onEnded, WindowRecordingSource? window = null)
     {
-        this.configuration = configuration; this.display = display; this.outputPath = outputPath;
+        this.configuration = configuration; this.display = display; this.outputPath = outputPath; this.window = window;
         this.helper = helper; this.displays = displays; this.onStarted = onStarted; this.onStopping = onStopping; this.onEnded = onEnded;
         startTimer = new DispatcherTimer { Interval = RecordingLifecycle.StartTimeout };
         startTimer.Tick += StartTimedOut;
@@ -81,7 +82,7 @@ internal sealed class RecordingSession
             startupCancellation.Token.ThrowIfCancellationRequested();
             await createdWriter.BeginWritingAsync();
             startupCancellation.Token.ThrowIfCancellationRequested();
-            createdSource = await Task.Run(() => CaptureFrameSource.CreateAsync(acquired, configuration, display, createdWriter));
+            createdSource = await Task.Run(() => CaptureFrameSource.CreateAsync(acquired, configuration, display, createdWriter, window));
             startupCancellation.Token.ThrowIfCancellationRequested();
             device = acquired; writer = createdWriter; source = createdSource;
             createdSource.SourceClosed += SourceClosed; createdSource.Failed += SourceFailed;
@@ -103,7 +104,11 @@ internal sealed class RecordingSession
     private void WriterFinished() => Post(() => Send(new RecordingEvent.OutputFinished()));
     private void WriterFailed(RecordingFailure failure, bool content) => Post(() =>
         Send(lifecycle.Phase is RecordingPhase.Starting ? new RecordingEvent.CaptureFailedToStart(failure) : new RecordingEvent.OutputFailed(failure, content)));
-    private void SourceClosed() => Post(Stop);
+    private void SourceClosed() => Post(() =>
+    {
+        if (window is null || WindowFrameTracker.PollOnce(new(window.Handle), window.ThreadId) is WindowPollResult.Gone) Stop();
+        else SourceFailed(new InvalidOperationException("The window capture stopped unexpectedly."));
+    });
     private void SourceFailed(Exception error) => Post(() =>
     {
         if (lifecycle.Phase is RecordingPhase.Starting) Send(new RecordingEvent.CaptureFailedToStart(new RecordingFailure(error.Message)));
@@ -124,7 +129,7 @@ internal sealed class RecordingSession
         });
     }
     private void DisplaysChanged(object? sender, DisplayConfigurationChangedEventArgs args)
-    { if (RecordingLifecycle.IsRecordedDisplayChanged(display, args.New)) Stop(); }
+    { if (window is null && RecordingLifecycle.IsRecordedDisplayChanged(display, args.New)) Stop(); }
     private void StartTimedOut(object? sender, EventArgs args)
     { startTimer.Stop(); if (lifecycle.Phase is RecordingPhase.Starting) Send(new RecordingEvent.CaptureFailedToStart(RecordingFailure.NoFrames)); }
     private void StopTimedOut(object? sender, EventArgs args)
