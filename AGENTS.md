@@ -104,7 +104,7 @@ dotnet test windows/Snapper.slnx                 # runs Snapper.Core.Tests
 dotnet publish windows/src/Snapper.Windows -c Release -r win-x64    # or win-arm64
 ```
 
-`Snapper.Windows` sets `EnableWindowsTargeting=true`, so it compiles on macOS but can only run on Windows. Every Windows spec must leave `dotnet build` and `dotnet test` green. GUI behavior is verified manually on a Windows 11 machine.
+`Snapper.Windows` sets `EnableWindowsTargeting=true`, so it compiles on macOS but can only run on Windows. Debug builds default to `win-x64` (override with `-r win-arm64`) so cross-builds also emit a Windows `Snapper.exe`. The test project opts out of the xUnit package’s default Microsoft.Testing.Platform application mode to keep the documented VSTest command working. Every Windows spec must leave `dotnet build` and `dotnet test` green. GUI behavior is verified manually on a Windows 11 machine.
 
 ### Architecture rules (Windows)
 
@@ -116,6 +116,7 @@ dotnet publish windows/src/Snapper.Windows -c Release -r win-x64    # or win-arm
 - Preferences go through one typed settings type persisted as JSON (`%APPDATA%\Snapper\settings.json`), with the file path injectable for tests.
 - Wrap native handles and COM objects (`SafeHandle`, `using`, `Marshal.ReleaseComObject` where needed). No `!` null-forgiving operator outside tests, except for truly invariant cases, each with a comment.
 - Namespace pitfalls: the WPF application class is `SnapperApplication`. A class named `App` clashes with the `Snapper.Windows.App` namespace. Inside `namespace Snapper.Windows…`, an unqualified `Windows.*` resolves to `Snapper.Windows.*`, so import WinRT and CsWin32 namespaces with top-of-file `using` directives or write them as `global::Windows.…`.
+- WPF owns process DPI through `app.manifest`. Suppress only WinForms analyzer `WFO0003` in the Windows app project: WinForms supplies the tray, while removing the manifest would break WPF Per-Monitor V2 awareness.
 - User-facing strings follow PRD §13. Don't reuse macOS wording that names Mac concepts (Finder, ⌘, System Settings).
 
 ## Spec workflow

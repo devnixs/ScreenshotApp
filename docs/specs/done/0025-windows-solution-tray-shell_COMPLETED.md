@@ -515,3 +515,31 @@ Listed in the Test plan.
 - Publish profiles, the app icon (`.ico`) and version resources, and Windows build docs: **0047**.
 - Dark-mode styling of the tray menu itself (it uses the standard WinForms renderer), and high-contrast
   icon variants. PRD §13.3 doesn't require them.
+
+## Verification status
+
+Automated verification on 2026-11-03 (macOS, .NET SDK 10.0.102):
+
+- `dotnet build windows/Snapper.slnx -c Debug`: green, **0 warnings, 0 errors**.
+- `dotnet test windows/Snapper.slnx`: green, **37 passed, 0 failed, 0 skipped**.
+- `file` identifies the cross-built `Snapper.exe` as a PE32+ Windows GUI executable (x64). Its embedded manifest contains PerMonitorV2, the Windows 10/11 compatibility GUID, Common Controls 6, and asInvoker.
+- Generated `bin/` and `obj/` files are ignored. Core has no package references or platform-assembly references (enforced by a smoke test).
+- Packages checked against the official NuGet gallery and flat-container API: [CsWin32 0.3.367](https://www.nuget.org/packages/Microsoft.Windows.CsWin32/0.3.367), [xunit.v3 4.0.2](https://www.nuget.org/packages/xunit.v3/4.0.2), [xunit.runner.visualstudio 4.0.1](https://www.nuget.org/packages/xunit.runner.visualstudio/4.0.1), [Microsoft.NET.Test.Sdk 18.11.0](https://www.nuget.org/packages/Microsoft.NET.Test.Sdk/18.11.0).
+
+The app defaults to the `win-x64` runtime for cross-builds, with the runtime suffix omitted from the build output path so the manual command above remains valid. `-r win-arm64` overrides it. The test project sets `IsTestingPlatformApplication=false` to retain VSTest with the current xUnit package, avoiding the MTP 2/.NET 10 incompatibility with the original command. The Windows app suppresses only `WFO0003`: its required WPF DPI manifest and WinForms tray initialization deliberately coexist. These build details are recorded in AGENTS.md. The PRD needs no change.
+
+GUI behavior has **not** been verified. Run these checks on Windows 11:
+
+- [ ] not yet run by user: Build and launch the Debug `Snapper.exe`; confirm only a tray icon appears, with no window, taskbar button, or Alt+Tab entry. Find it in the overflow and pin it if needed.
+- [ ] not yet run by user: Hover the icon and confirm the tooltip is “Snapper”.
+- [ ] not yet run by user: Switch the default Windows mode between Dark and Light; confirm the viewfinder switches between white and black within a couple of seconds.
+- [ ] not yet run by user: Left- and right-click the icon; confirm the same menu order and no shortcut text. Confirm Esc and clicking elsewhere dismiss it.
+- [ ] not yet run by user: Click the icon while its menu is open; confirm it closes without reopening. Double-click the icon; confirm the menu opens once.
+- [ ] not yet run by user: With DebugView capturing Win32 output, choose Screenshot, Record, and Annotate; confirm one matching “not implemented yet” line and no visible action each time.
+- [ ] not yet run by user: Open Settings twice; confirm one placeholder window, frontmost with a taskbar button. Close it and confirm Snapper remains running.
+- [ ] not yet run by user: Change primary-display scale to 100%, 150%, and 200%; confirm crisp tray glyph and correctly scaled menu text.
+- [ ] not yet run by user: Launch Snapper again while it is running; confirm Settings opens in the existing instance and only one process/tray icon remains.
+- [ ] not yet run by user: Minimize Settings, put another app in front, and launch Snapper again; confirm Settings restores in front with keyboard focus.
+- [ ] not yet run by user: Restart Windows Explorer; confirm the tray icon reappears.
+- [ ] not yet run by user: Choose Exit Snapper; confirm immediate icon removal and process exit. Launch again and confirm normal startup.
+- [ ] not yet run by user: If an Arm64 Windows device is available, build with `-r win-arm64` and repeat launch, menu, and exit checks there.

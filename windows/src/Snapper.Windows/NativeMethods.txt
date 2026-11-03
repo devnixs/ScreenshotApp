@@ -1,0 +1,6 @@
+SetForegroundWindow
+AllowSetForegroundWindow
+ASFW_ANY
+DestroyIcon
+MonitorFromPoint
+GetDpiForMonitor

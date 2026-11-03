@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Snapper.Core/Snapper.Core.csproj" />
+    <Project Path="src/Snapper.Windows/Snapper.Windows.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Snapper.Core.Tests/Snapper.Core.Tests.csproj" />
+  </Folder>
+</Solution>
