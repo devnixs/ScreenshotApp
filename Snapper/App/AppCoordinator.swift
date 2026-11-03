@@ -122,7 +122,7 @@ final class AppCoordinator: NSObject {
             _ = try folder.prepareForWriting()
             let url = try folder.uniqueFileURL(for: .recording, date: startDate)
             let session = RecordingSession(
-                source: source, outputURL: url,
+                source: source, outputURL: url, settings: settings,
                 showOnboarding: { [weak self] in self?.showOnboarding() },
                 onStarted: { [weak self] in
                     guard let self else { return }

@@ -30,6 +30,7 @@ enum RecordingSource {
 final class RecordingSession {
     let source: RecordingSource
     let outputURL: URL
+    private let settings: AppSettings
     private let onEnded: @MainActor () -> Void
     private let onStarted: @MainActor () -> Void
     private let onStopping: @MainActor () -> Void
@@ -45,10 +46,11 @@ final class RecordingSession {
         Task { @MainActor in self?.receive(callback) }
     }
 
-    init(source: RecordingSource, outputURL: URL,
+    init(source: RecordingSource, outputURL: URL, settings: AppSettings,
          showOnboarding: @escaping @MainActor () -> Void,
          onStarted: @escaping @MainActor () -> Void, onStopping: @escaping @MainActor () -> Void,
          onEnded: @escaping @MainActor () -> Void) {
+        self.settings = settings
         self.source = source
         self.outputURL = outputURL
         self.showOnboarding = showOnboarding
@@ -143,7 +145,12 @@ final class RecordingSession {
             defer { anchor.close() }
             let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
             let filter: SCContentFilter
-            let config = SCStreamConfiguration()
+            // Snapshot fresh preferences and availability once per recording, after content lookup.
+            let microphone = MicrophoneCaptureInputs(
+                recordMicrophoneSetting: settings.recordMicrophone,
+                authorization: MicrophonePermission.authorization,
+                hasAudioInputDevice: MicrophonePermission.hasAudioInputDevice)
+            let config: SCStreamConfiguration
             switch source {
             case .rectangle(let configuration):
                 guard let display = content.displays.first(where: { $0.displayID == configuration.displayID }) else {
@@ -153,14 +160,7 @@ final class RecordingSession {
                     throw RecordingFailure(message: "Couldn't exclude Snapper's recording controls from capture.", kind: .other)
                 }
                 filter = SCContentFilter(display: display, excludingApplications: [ownApp], exceptingWindows: [])
-                config.sourceRect = configuration.sourceRect
-                config.width = configuration.pixelWidth
-                config.height = configuration.pixelHeight
-                config.minimumFrameInterval = configuration.minimumFrameInterval
-                config.pixelFormat = configuration.pixelFormat
-                config.queueDepth = configuration.queueDepth
-                config.showsCursor = configuration.showsCursor
-                config.scalesToFit = false
+                config = RecordingConfigurationBuilder.buildStream(rectangle: configuration, microphone: microphone)
             case .window(let windowID):
                 guard let window = content.windows.first(where: { $0.windowID == windowID }) else {
                     throw ScreenshotCaptureError.windowUnavailable
@@ -169,19 +169,8 @@ final class RecordingSession {
                 filter = SCContentFilter(desktopIndependentWindow: window)
                 let configuration = RecordingConfigurationBuilder.buildWindow(
                     contentSize: filter.contentRect.size, pointPixelScale: CGFloat(filter.pointPixelScale))
-                config.width = configuration.pixelWidth
-                config.height = configuration.pixelHeight
-                config.scalesToFit = configuration.scalesToFit
-                config.preservesAspectRatio = configuration.preservesAspectRatio
-                config.ignoreShadowsSingleWindow = configuration.ignoresShadowsSingleWindow
-                config.ignoreGlobalClipSingleWindow = configuration.ignoresGlobalClipSingleWindow
-                config.showsCursor = configuration.showsCursor
-                config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(configuration.frameRate))
-                config.pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
-                config.queueDepth = 5
+                config = RecordingConfigurationBuilder.buildStream(window: configuration, microphone: microphone)
             }
-            config.capturesAudio = false
-            config.captureMicrophone = false
             let outputConfig = SCRecordingOutputConfiguration()
             outputConfig.outputURL = outputURL
             outputConfig.videoCodecType = .h264

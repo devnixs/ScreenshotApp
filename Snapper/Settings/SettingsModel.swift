@@ -66,7 +66,7 @@ final class SettingsModel {
 
     func setRecordMicrophone(_ value: Bool) {
         microphoneRequest.userToggled(to: value)
-        let outcome = MicrophoneToggleDecision.userToggled(to: value, status: microphoneAuthorization)
+        let outcome = MicrophoneToggleDecision.userToggled(to: value, status: MicrophonePermission.authorization)
         apply(outcome)
         guard outcome.shouldRequestAccess, microphoneRequest.beginRequest() else { return }
         AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
@@ -77,15 +77,6 @@ final class SettingsModel {
         }
     }
 
-    private var microphoneAuthorization: MicrophoneAuthorization {
-        switch AVCaptureDevice.authorizationStatus(for: .audio) {
-        case .notDetermined: .notDetermined
-        case .authorized: .authorized
-        case .denied: .denied
-        case .restricted: .restricted
-        @unknown default: .restricted
-        }
-    }
     private func apply(_ outcome: MicrophoneToggleOutcome) {
         settings.recordMicrophone = outcome.storedValue
         showsMicrophoneDeniedNote = outcome.showsDeniedNote
@@ -93,7 +84,7 @@ final class SettingsModel {
 
     func refreshOnAppear() {
         refreshLaunchAtLogin()
-        apply(MicrophoneToggleDecision.reconcileOnAppear(stored: recordMicrophone, status: microphoneAuthorization))
+        apply(MicrophoneToggleDecision.reconcileOnAppear(stored: recordMicrophone, status: MicrophonePermission.authorization))
         refreshConflicts()
     }
 

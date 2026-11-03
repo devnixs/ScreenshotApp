@@ -1,6 +1,7 @@
 import CoreGraphics
 import CoreMedia
 import CoreVideo
+import ScreenCaptureKit
 
 struct RecordingConfiguration: Sendable, Equatable {
     let displayID: CGDirectDisplayID
@@ -48,5 +49,46 @@ enum RecordingConfigurationBuilder {
             pixelWidth: width, pixelHeight: height,
             minimumFrameInterval: CMTime(value: 1, timescale: CMTimeScale(max(1, framesPerSecond))),
             pixelFormat: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, queueDepth: 5, showsCursor: showsCursor)
+    }
+}
+
+// Deterministic framework configuration: no permission requests or device discovery here.
+extension RecordingConfigurationBuilder {
+    static func buildStream(rectangle: RecordingConfiguration,
+                            microphone: MicrophoneCaptureInputs) -> SCStreamConfiguration {
+        let config = SCStreamConfiguration()
+        config.sourceRect = rectangle.sourceRect
+        config.width = rectangle.pixelWidth
+        config.height = rectangle.pixelHeight
+        config.minimumFrameInterval = rectangle.minimumFrameInterval
+        config.pixelFormat = rectangle.pixelFormat
+        config.queueDepth = rectangle.queueDepth
+        config.showsCursor = rectangle.showsCursor
+        config.scalesToFit = false
+        configureAudio(config, microphone: microphone)
+        return config
+    }
+
+    static func buildStream(window: WindowRecordingConfiguration,
+                            microphone: MicrophoneCaptureInputs) -> SCStreamConfiguration {
+        let config = SCStreamConfiguration()
+        config.width = window.pixelWidth
+        config.height = window.pixelHeight
+        config.scalesToFit = window.scalesToFit
+        config.preservesAspectRatio = window.preservesAspectRatio
+        config.ignoreShadowsSingleWindow = window.ignoresShadowsSingleWindow
+        config.ignoreGlobalClipSingleWindow = window.ignoresGlobalClipSingleWindow
+        config.showsCursor = window.showsCursor
+        config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(window.frameRate))
+        config.pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+        config.queueDepth = 5
+        configureAudio(config, microphone: microphone)
+        return config
+    }
+
+    private static func configureAudio(_ config: SCStreamConfiguration, microphone: MicrophoneCaptureInputs) {
+        config.capturesAudio = false // System/app audio is never recorded.
+        config.captureMicrophone = MicrophoneCapturePolicy.shouldCaptureMicrophone(microphone)
+        config.microphoneCaptureDeviceID = nil // Resolve the system default when capture starts.
     }
 }

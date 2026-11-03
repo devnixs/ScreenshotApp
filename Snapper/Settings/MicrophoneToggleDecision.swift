@@ -1,4 +1,4 @@
-enum MicrophoneAuthorization: CaseIterable, Sendable {
+enum MicrophoneAuthorization: CaseIterable, Sendable, Equatable {
     case notDetermined, authorized, denied, restricted
 }
 

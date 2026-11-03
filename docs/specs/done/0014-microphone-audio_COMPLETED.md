@@ -5,7 +5,7 @@
 
 ## Context
 
-No app code exists yet. When this spec starts, the lower-numbered specs will have delivered:
+The lower-numbered specs delivered:
 
 - `AppSettings` (0003, `Snapper/Settings/AppSettings.swift`) with the Boolean `recordMicrophone` key, default **off**.
 - The Settings window's *Recording* tab (0010, `Snapper/Settings/SettingsView.swift`), whose *Record microphone* toggle requests microphone permission when it is turned on, and switches back off with an **Open System Settings** note when permission is denied (PRD §10, line 177). 0010 also adds `NSMicrophoneUsageDescription` (or 0001 does) because requesting permission without it crashes.
@@ -54,7 +54,7 @@ As a Snapper user who turned on *Record microphone* in Settings, I get my voice 
   - `info.properties.NSMicrophoneUsageDescription: "Snapper records your microphone during screen recordings when you turn it on in Settings."` If 0001/0010 already set a string, keep theirs.
   - If the app target enables the hardened runtime (`ENABLE_HARDENED_RUNTIME: YES`), make sure the target's entitlements contain `com.apple.security.device.audio-input: true`. Without it, a hardened-runtime build silently gets no microphone. Add the entitlements file (`Snapper/Snapper.entitlements`, referenced via `entitlements:` in `project.yml`) only if none exists.
   - Run `xcodegen generate` (a new source file is added).
-- **No PRD change** in this spec. See *Open questions* for the gap about revoked permission and missing input devices.
+- **No further PRD change** in this implementation. The approved video-only fallback for revoked permission and missing input devices is already recorded in PRD §7.2 and *Open questions*.
 
 ## Acceptance criteria
 
@@ -111,3 +111,27 @@ None. User confirmed on 2026-11-03: When the setting is on but microphone permis
 - Pill, border, Cancel: 0012-recording-overlay. Window filter and frame tracking: 0013-window-recording.
 - A microphone device picker, input level meter, mute control, or separate audio tracks: not in the PRD.
 - System/app audio capture: PRD §2 non-goal.
+
+## Verification status
+
+Implemented and automated verification passed on **2026-11-03**.
+
+- `xcodegen generate`: succeeded.
+- `xcodebuild -scheme Snapper -configuration Debug build`: **BUILD SUCCEEDED**.
+- `xcodebuild -scheme Snapper test`: **TEST SUCCEEDED**, **257 tests in 43 suites passed**, including 9 new microphone policy/configuration tests.
+- Built Debug `Snapper.app/Contents/Info.plist` checked with PlistBuddy: `NSMicrophoneUsageDescription` is `Snapper records your microphone when Record microphone is on.`
+- Built Debug app checked with `codesign -d --entitlements -`: `com.apple.security.device.audio-input` is `true`. Existing `project.yml` keeps Debug hardened runtime off and Release on; the existing entitlement and usage description were retained. No signing configuration changes.
+- Reused 0010's `MicrophoneAuthorization` and shared the read-only permission adapter with Settings. Added deterministic `buildStream(rectangle:microphone:)` and `buildStream(window:microphone:)` overloads to the existing builder; the original pure geometry builders and content filters are unchanged. Session snapshots the shared settings and current permission/device availability immediately before constructing its stream configuration.
+- No app GUI launch or TCC interactions were performed. Automated checks do not verify audio tracks, playback, indicators, permissions, hotkeys, or overlays.
+
+Manual verification is pending (the detailed procedures and `ffprobe` command are in *Test plan* above):
+
+- [ ] not yet run by user — Setting off: rectangle recording has H.264 video only, no audio stream, no orange microphone indicator.
+- [ ] not yet run by user — First toggle on: macOS requests microphone access at toggle time and the toggle stays on after granting it.
+- [ ] not yet run by user — Setting on and granted: rectangle recording has H.264 video plus one microphone audio track (expected AAC), an orange indicator, and synced audible narration in QuickTime Player without corruption.
+- [ ] not yet run by user — With headphones and music playing, system audio is absent; setting off produces no audio stream.
+- [ ] not yet run by user — Window recording includes synced microphone audio and only the selected window; moving the window continues following it and the pill/border remain excluded.
+- [ ] not yet run by user — Revoked and reset microphone permission: recording starts with no prompt or alert, saves/reveals normally, and contains video only.
+- [ ] not yet run by user — Disconnect the default headset during recording and record the observed ScreenCaptureKit behavior; no specific result is required.
+- [ ] not yet run by user — Where hardware permits, setting on with no input device records video only with no prompt or alert.
+- [ ] not yet run by user — Changing the setting mid-recording affects only the next recording; Cancel discards the file including its audio.

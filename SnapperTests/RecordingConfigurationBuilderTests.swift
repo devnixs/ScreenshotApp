@@ -2,6 +2,7 @@ import Testing
 import CoreGraphics
 import CoreMedia
 import CoreVideo
+import ScreenCaptureKit
 @testable import Snapper
 
 struct RecordingConfigurationBuilderTests {
@@ -103,6 +104,67 @@ struct RecordingConfigurationBuilderTests {
             #expect(result.ignoresGlobalClipSingleWindow)
             #expect(result.showsCursor)
             #expect(result.frameRate == 30)
+        }
+    }
+}
+
+extension RecordingConfigurationBuilderTests {
+    private var microphoneInputs: [MicrophoneCaptureInputs] {
+        [false, true].flatMap { setting in
+            MicrophoneAuthorization.allCases.flatMap { authorization in
+                [false, true].map { device in
+                    MicrophoneCaptureInputs(recordMicrophoneSetting: setting,
+                        authorization: authorization, hasAudioInputDevice: device)
+                }
+            }
+        }
+    }
+
+    private func streamConfigurations(_ microphone: MicrophoneCaptureInputs) -> [SCStreamConfiguration] {
+        [RecordingConfigurationBuilder.buildStream(
+            rectangle: build(CGRect(x: 10.25, y: 20.5, width: 400.5, height: 300.25)), microphone: microphone),
+         RecordingConfigurationBuilder.buildStream(
+            window: RecordingConfigurationBuilder.buildWindow(contentSize: CGSize(width: 800.5, height: 600.5),
+                pointPixelScale: 2), microphone: microphone)]
+    }
+
+    @Test func testCapturesAudioAlwaysFalse() {
+        for input in microphoneInputs {
+            for config in streamConfigurations(input) { #expect(!config.capturesAudio) }
+        }
+    }
+
+    @Test func testCaptureMicrophoneFollowsPolicy() {
+        for input in microphoneInputs {
+            for config in streamConfigurations(input) {
+                #expect(config.captureMicrophone == MicrophoneCapturePolicy.shouldCaptureMicrophone(input))
+            }
+        }
+    }
+
+    @Test func testMicrophoneDeviceIDIsSystemDefault() {
+        for input in microphoneInputs {
+            for config in streamConfigurations(input) { #expect(config.microphoneCaptureDeviceID == nil) }
+        }
+    }
+
+    @Test func testMicrophoneDoesNotAlterVideoSettings() {
+        let on = streamConfigurations(.init(recordMicrophoneSetting: true,
+            authorization: .authorized, hasAudioInputDevice: true))
+        let off = streamConfigurations(.init(recordMicrophoneSetting: false,
+            authorization: .authorized, hasAudioInputDevice: true))
+        for (enabled, disabled) in zip(on, off) {
+            #expect(enabled.width == disabled.width)
+            #expect(enabled.height == disabled.height)
+            #expect(enabled.sourceRect == disabled.sourceRect)
+            #expect(enabled.minimumFrameInterval == disabled.minimumFrameInterval)
+            #expect(enabled.showsCursor == disabled.showsCursor)
+            #expect(enabled.pixelFormat == disabled.pixelFormat)
+            #expect(enabled.queueDepth == disabled.queueDepth)
+            #expect(enabled.scalesToFit == disabled.scalesToFit)
+            #expect(enabled.preservesAspectRatio == disabled.preservesAspectRatio)
+            #expect(enabled.ignoreShadowsSingleWindow == disabled.ignoreShadowsSingleWindow)
+            #expect(enabled.ignoreGlobalClipSingleWindow == disabled.ignoreGlobalClipSingleWindow)
         }
     }
 }
