@@ -6,4 +6,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/Snapper.Core.Tests/Snapper.Core.Tests.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Snapper.IconGen/Snapper.IconGen.csproj" />
+  </Folder>
 </Solution>

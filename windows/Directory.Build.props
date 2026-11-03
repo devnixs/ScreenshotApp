@@ -8,6 +8,12 @@
     <Deterministic>true</Deterministic>
     <Company>Thera Engineering</Company>
     <Product>Snapper</Product>
+    <Version>1.0.0</Version>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <Copyright>© 2026 Thera Engineering</Copyright>
+  </PropertyGroup>
+  <!-- Referenced Core symbols must be embedded too, or publishing leaves a loose Core.pdb. -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <DebugType>embedded</DebugType>
   </PropertyGroup>
 </Project>

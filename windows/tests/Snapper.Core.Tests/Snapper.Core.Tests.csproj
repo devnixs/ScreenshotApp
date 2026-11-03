@@ -14,5 +14,6 @@
     <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <Using Include="Xunit" />
+    <None Include="../../src/Snapper.Windows/Assets/Snapper.ico" Link="Assets/Snapper.ico" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

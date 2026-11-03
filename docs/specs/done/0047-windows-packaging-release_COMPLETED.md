@@ -438,7 +438,7 @@ test fails if the checked-in file drifts from the code. Each icon size reuses
       text). **Expected:** the saved and copied images have the capture's full pixel size. Copy & Close
       closes without a prompt. [0043, 0044]
   23. Close a modified window (Ctrl+W, Alt+F4, X). **Expected:** "Discard changes?". *Exit Snapper*
-      with 2 modified windows asks once "Quit and discard 2 unsaved annotations?". Signing out lists
+      with 2 modified windows asks once "Exit and discard 2 unsaved annotations?". Signing out lists
       Snapper with "Unsaved annotations" on the shutdown screen, with no Snapper prompt. [0043]
 
   *Settings, shortcuts, login* (§12, §13.9, §13.10, §13.11)
@@ -462,3 +462,56 @@ test fails if the checked-in file drifts from the code. Each icon size reuses
 - Fixing feature bugs found by the checklist. They're filed against the owning spec (0025–0046), unless
   they're caused by single-file publishing.
 - macOS packaging (unchanged).
+
+
+## Verification status
+
+Automated verification on 2026-11-03 is green:
+
+- `dotnet build windows/Snapper.slnx -c Debug`: **0 warnings, 0 errors**.
+- `dotnet test windows/Snapper.slnx`: **1,383 passed, 0 failed, 0 skipped**, including 25 new packaging/icon tests. Tests cover raster coverage/compositing, CRC-32, PNG round trips/CRCs, ICO entries, all eight generated icon sizes, the checked-in asset's decoded pixels, and exact version metadata.
+- Both publish-profile commands and `dotnet publish windows/src/Snapper.Windows -c Release -r win-x64 -o /tmp/snapper-0047-plain-x64` passed with **zero warnings/errors**. Every output directory contains exactly one file, `Snapper.exe`.
+- `windows/artifacts/publish/win-x64/Snapper.exe`: **77,920,445 bytes**, PE32+ GUI **x64 (0x8664)**. All five bundled native DLLs have the matching x64 machine type.
+- `windows/artifacts/publish/win-arm64/Snapper.exe`: **73,703,218 bytes**, PE32+ GUI **Arm64 (0xAA64)**. All four bundled native DLLs have the matching Arm64 machine type.
+- The plain `-r win-x64` executable is byte-identical to the x64 profile output (SHA-256 `c9fd6ccf32cc5fc327510fba79226f83b9e75b96f44cc723847b7487b0d7735c`). Arm64 SHA-256: `3cd5d0d66d801d388ad735a29f3acb0df4fe3b483fe2c589ebd7c3ace85e8bc8`.
+- PE resource/bundle inspection confirms all eight PNG icon resources; exact company/product/file version fields; PerMonitorV2, asInvoker, Common Controls 6 and Windows 10/11 compatibility manifest; bundled .NET and Windows Desktop **10.0.2** runtimes and native WPF libraries. The icon's 256-pixel raster was visually inspected. No Windows executable was run.
+- No `Assembly.Location`, `CodeBase`, or assembly-file lookup hits exist in `windows/src`; the single-file analyzer reported no warnings. Debug remains framework-dependent with its existing output path. Publish output is git-ignored.
+
+Implementation adjustments to the starting config:
+
+- Earlier specs set a default Debug Windows RID. The publish group is therefore **Release + RID conditional**, preserving framework-dependent Debug behavior. Profiles repeat its properties.
+- Release builds enable RID-specific output/intermediate paths. Without this, sequential x64/Arm64 publishing reused an x64 apphost in an Arm64 bundle; machine-type inspection caught it, and both outputs were rebuilt and checked after the fix.
+- Shared Release props embed symbols in referenced Core projects as well as the app. App-only embedded symbols otherwise left a loose `Snapper.Core.pdb` next to the executable.
+- The Windows wording in manual item 23 is corrected to **Exit** per PRD §13.2. No PRD change was needed.
+
+Logs: `/tmp/snapper-0047-build.log`, `/tmp/snapper-0047-test.log`, `/tmp/snapper-0047-publish-x64.log`, `/tmp/snapper-0047-publish-arm64.log`, `/tmp/snapper-0047-publish-plain.log`, and `/tmp/snapper-0047-inspection.jsonl`.
+
+**Release acceptance is still pending.** GUI, capture, audio, native codec playback, and clean-Windows runtime behavior have not been verified. Run the full Manual verification section above on clean Windows 11 x64 and Arm64 machines without .NET (A/B), with mixed-DPI, negative-origin monitors for C. Run 1–4 on both architectures, the remaining items on at least one, and repeat 7, 14, 18, and 22 on the other architecture. Record VM/device details, including hardware/software H.264 encoding when relevant.
+
+- [ ] not yet run by user: **1 — Clean-machine launch (A/B):** copy the matching published executable, launch without a .NET prompt, and confirm tray-only presence.
+- [ ] not yet run by user: **2 — Identity (A/B):** inspect Explorer versions, copyright and icon, including crisp 100%/150% large-icon rendering.
+- [ ] not yet run by user: **3 — Single instance (A/B):** relaunch and confirm existing Settings opens with one process/tray icon.
+- [ ] not yet run by user: **4 — Window icons (A/B):** confirm Settings and annotation title-bar/taskbar/Alt+Tab icons.
+- [ ] not yet run by user: **5 — Tray:** exercise both menu buttons, current shortcut text, and light/dark theme switching.
+- [ ] not yet run by user: **6 — Screenshot:** verify default save + PNG/DIB clipboard output, filename/folder creation, shutter sound, native dimensions and no cursor.
+- [ ] not yet run by user: **7 — Mixed monitors (C/both architectures):** check overlay coverage, DIP readout, starting-monitor clamp, native pixel output and negative origins.
+- [ ] not yet run by user: **8 — Window screenshot:** test covered-window capture without shadow and Space during a drag.
+- [ ] not yet run by user: **9 — Selection cancellation:** check Esc, tiny drags, focus return and display-change cancellation.
+- [ ] not yet run by user: **10 — Destinations/sound:** test each destination independently and the shutter toggle.
+- [ ] not yet run by user: **11 — Folder failure:** test Choose Folder/Cancel, pending-save retry, settings update and clipboard preservation.
+- [ ] not yet run by user: **12 — Exclusion:** confirm overlays/pill/border never appear in screenshots, recordings or annotated captures; normal Settings/annotation windows may appear per PRD §13.6.
+- [ ] not yet run by user: **13 — Recording:** verify immediate start, pill/border, red tray/tooltip, dimensions/timing/cursor, Explorer reveal, ignored shortcuts and unchanged clipboard.
+- [ ] not yet run by user: **14 — Stop/cancel (both architectures):** test pill/hotkey/tray stop and Cancel; inspect output for overlay exclusion.
+- [ ] not yet run by user: **15 — Window recording:** move/resize/cover/minimize/close; verify fixed letterboxing, following controls and stop/save on closure.
+- [ ] not yet run by user: **16 — Microphone:** test privacy denied/allowed states, privacy link and AAC audio.
+- [ ] not yet run by user: **17 — MP4 quality:** compare High/Medium/Low dimensions/sizes and conversion control suppression.
+- [ ] not yet run by user: **18 — GIF (both architectures):** test all qualities, looping, overlay exclusion and disabled microphone behavior.
+- [ ] not yet run by user: **19 — Recording exit/session end:** verify save-before-exit/sign-out and Windows' Saving recording reason.
+- [ ] not yet run by user: **20 — Annotation focus:** capture from another app and confirm frontmost focused window, initial fit and no upscaling.
+- [ ] not yet run by user: **21 — Annotation tools:** test all tools/styles/constraints/editing/undo/delete/text/caret/outline and style persistence.
+- [ ] not yet run by user: **22 — Export (both architectures):** test Save/Copy/Copy & Close at full capture resolution on 150% DPI, including Ctrl+Enter during text editing.
+- [ ] not yet run by user: **23 — Unsaved work:** test all close methods, one Exit prompt with two dirty editors, and Unsaved annotations shutdown blocking without a Snapper prompt.
+- [ ] not yet run by user: **24 — Rebinding:** test immediate changes, tray display, duplicates and Windows-key rejection.
+- [ ] not yet run by user: **25 — Conflicts:** occupy a binding externally, confirm notification/Shortcuts warning and working remaining shortcuts/tray action.
+- [ ] not yet run by user: **26 — Login:** verify quoted published-exe Run path, sign-in launch and removing the value when disabled.
+- [ ] not yet run by user: **27 — Defaults:** remove the settings file and confirm defaults after relaunch.

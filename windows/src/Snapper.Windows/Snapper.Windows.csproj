@@ -9,12 +9,29 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>Snapper</AssemblyName>
+    <AssemblyTitle>Snapper</AssemblyTitle>
+    <ApplicationIcon>Assets\Snapper.ico</ApplicationIcon>
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
     <!-- Cross-build a Windows executable on macOS too; publish -r may select Arm64. -->
     <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-x64</RuntimeIdentifier>
     <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
     <RootNamespace>Snapper.Windows</RootNamespace>
     <!-- WPF owns process DPI through the required manifest; WinForms only supplies the tray. -->
     <NoWarn>$(NoWarn);WFO0003</NoWarn>
+  </PropertyGroup>
+  <!-- Debug has a default Windows RID for cross-builds, but remains framework-dependent.
+     Publish profiles repeat these Release/RID settings because profile imports are evaluated later. -->
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' != '' and '$(Configuration)' == 'Release'">
+    <AppendRuntimeIdentifierToOutputPath>true</AppendRuntimeIdentifierToOutputPath>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebugType>embedded</DebugType>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- WPF/WinForms do not support trimming (NETSDK1168/1175). -->
+    <PublishTrimmed>false</PublishTrimmed>
+    <PublishReadyToRun>false</PublishReadyToRun>
   </PropertyGroup>
   <ItemGroup>
     <Using Remove="System.Windows.Forms" />

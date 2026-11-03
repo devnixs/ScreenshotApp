@@ -92,6 +92,9 @@ windows/
   src/Snapper.Windows/         # net10.0-windows10.0.22621.0 WinExe: WPF + tray + interop
     App/ Capture/ Recording/ Annotate/ Settings/ Support/ Interop/  app.manifest  NativeMethods.txt
   tests/Snapper.Core.Tests/    # net10.0 xUnit tests for Snapper.Core
+  tools/Snapper.IconGen/      # regenerates src/Snapper.Windows/Assets/Snapper.ico
+  artifacts/                 # publish output (git-ignored)
+  README.md
 ```
 
 Namespaces follow the folders (`Snapper.Core.Annotate.Model`, `Snapper.Windows.Capture`, …).
@@ -101,7 +104,8 @@ Namespaces follow the folders (`Snapper.Core.Annotate.Model`, `Snapper.Windows.C
 ```sh
 dotnet build windows/Snapper.slnx -c Debug       # builds Core, tests, and the WPF app (EnableWindowsTargeting)
 dotnet test windows/Snapper.slnx                 # runs Snapper.Core.Tests
-dotnet publish windows/src/Snapper.Windows -c Release -r win-x64    # or win-arm64
+dotnet publish windows/src/Snapper.Windows -p:PublishProfile=win-x64   # or win-arm64 → windows/artifacts/publish/<rid>/Snapper.exe
+dotnet run --project windows/tools/Snapper.IconGen -- windows/src/Snapper.Windows/Assets/Snapper.ico
 ```
 
 `Snapper.Windows` sets `EnableWindowsTargeting=true`, so it compiles on macOS but can only run on Windows. Debug builds default to `win-x64` (override with `-r win-arm64`) so cross-builds also emit a Windows `Snapper.exe`. The test project opts out of the xUnit package’s default Microsoft.Testing.Platform application mode to keep the documented VSTest command working. Every Windows spec must leave `dotnet build` and `dotnet test` green. GUI behavior is verified manually on a Windows 11 machine.
@@ -118,6 +122,7 @@ dotnet publish windows/src/Snapper.Windows -c Release -r win-x64    # or win-arm
 - Wrap native handles and COM objects (`SafeHandle`, `using`, `Marshal.ReleaseComObject` where needed). No `!` null-forgiving operator outside tests, except for truly invariant cases, each with a comment.
 - Namespace pitfalls: the WPF application class is `SnapperApplication`. A class named `App` clashes with the `Snapper.Windows.App` namespace. Inside `namespace Snapper.Windows…`, an unqualified `Windows.*` resolves to `Snapper.Windows.*`, so import WinRT and CsWin32 namespaces with top-of-file `using` directives or write them as `global::Windows.…`.
 - WPF owns process DPI through `app.manifest`. Suppress only WinForms analyzer `WFO0003` in the Windows app project: WinForms supplies the tray, while removing the manifest would break WPF Per-Monitor V2 awareness.
+- The app is published single-file: never use `Assembly.Location`. Use `Environment.ProcessPath`/`AppContext.BaseDirectory`. Keep the Release/RID-conditional publish group in `Snapper.Windows.csproj` and the two `.pubxml` profiles in sync.
 - User-facing strings follow PRD §13. Don't reuse macOS wording that names Mac concepts (Finder, ⌘, System Settings).
 
 ## Spec workflow
