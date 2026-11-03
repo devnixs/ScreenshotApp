@@ -65,7 +65,8 @@ internal sealed class DisplayChangeWatcher : IDisposable
     {
         var fresh = DisplayInfoProvider.GetCurrent();
         var previous = Current;
-        var changed = DisplayConfigurationChange.HasChanged(previous, fresh);
+        var changed = DisplayConfigurationChange.HasChanged(previous, fresh) ||
+            DisplayConfigurationChange.HasWorkAreaChanged(previous, fresh);
         Current = fresh;
         if (!changed) return;
         Debug.WriteLine($"Displays changed: {string.Join("; ", fresh.Select(d => $"{d.DeviceName} {d.Bounds} {d.Dpi} primary={d.IsPrimary}"))}");

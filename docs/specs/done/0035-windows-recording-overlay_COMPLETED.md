@@ -403,9 +403,9 @@ app I'm working in, and none of it ever shows up in the video.
      secondary. Expected: pill and border only on that monitor, same physical-looking size as on
      the primary, crisp, border hugging the area.
   6. While recording, click into Notepad and type, then click **Stop** once. Expected: the single
-     click stops recording; Notepad keeps focus (the caret stays, typing continues to go there);
-     File Explorer opens with the new `Recording … .mp4` selected; pill and border gone; tray icon
-     back to the viewfinder.
+     click stops recording without activating Snapper; File Explorer opens with the new
+     `Recording … .mp4` selected as usual; pill and border gone; tray icon back to the viewfinder.
+     Explorer's reveal may take foreground focus; the nonactivation requirement applies to the pill.
   7. Play that `.mp4` and the full-monitor one from step 3. Expected: no pill and no dashed border
      anywhere in the video.
   8. Start a recording, click **Cancel**. Expected: stops at once, no dialog, Explorer doesn't
@@ -419,8 +419,10 @@ app I'm working in, and none of it ever shows up in the video.
   12. Stop via the tray icon; start another and stop via Ctrl+Shift+5; start another and choose
       Exit Snapper. Expected: pill and border disappear every time (and the last recording is saved).
   13. Click **Stop** twice quickly. Expected: one file, one Explorer window, no error.
-  14. While recording on the secondary monitor, change its scale in Settings → Display, then move
-      the taskbar. Expected: the pill is re-placed with the new size and stays on the work area.
+  14. While recording on the secondary monitor, change its work area (for example, toggle taskbar
+      auto-hide). Expected: the pill is re-placed and stays in the work area without stopping.
+      Changing monitor DPI/resolution/arrangement instead stops and saves as required by PRD §13.6
+      and 0034; start a fresh recording at the new scale and confirm correctly sized overlays.
   15. Record for over 10 minutes (or temporarily test at the right monitor edge). Expected: the
       pill widens at `10:00` and stays fully on screen.
 
@@ -434,3 +436,39 @@ app I'm working in, and none of it ever shows up in the video.
 - Microphone: **0037**. Converting state and MP4/GIF quality: **0045**, **0046**.
 - Selection overlay and its Esc handling: **0030** / **0032**.
 - Pause/resume, countdown, dragging the pill: not in the PRD (§2 non-goals).
+
+
+## Verification status
+
+Automated verification on 2026-11-03: `dotnet build windows/Snapper.slnx -c Debug` passed with
+**0 warnings and 0 errors**. `dotnet test windows/Snapper.slnx` passed **803 tests**, including
+**56 new cases**, with zero failures and zero skips. New tests cover work-area placement,
+100/125/150/175/200% scaling, negative origins, inclusive fit boundaries, midpoint and ceiling
+rounding, oversized/widened pills, reachable hidden frames, border geometry, invariant elapsed
+formatting, and work-area-only change detection. Existing cancellation lifecycle tests remain green.
+
+Implemented pill/border windows, shared nonactivation/exclusion/DPI handling, the overlay controller,
+and coordinator stop/cancel/end-path wiring. Display change notifications now also report work-area
+changes; selection cancellation and recording-stop policies still ignore work-area-only changes.
+`DisplayGeometry` gained scale conversion and ceiling size helpers. No PRD or AGENTS.md changes
+were needed. The manual DPI-change step was corrected to match PRD §13.6: monitor DPI changes
+stop rectangle recordings; work-area-only changes reposition the overlays. The Stop focus check
+now distinguishes nonactivation of Snapper from Explorer's normal reveal behavior.
+
+GUI behavior has **not** been verified. On Windows 11:
+
+- [ ] not yet run by user: Record a medium rectangle and confirm a dashed border and centred pill with `0:00`, Stop, Cancel, and stable one-second timer digits.
+- [ ] not yet run by user: Record near the taskbar and confirm the pill goes above the selection.
+- [ ] not yet run by user: Record the full monitor, including with taskbar auto-hide, and confirm the pill stays inside and above the taskbar.
+- [ ] not yet run by user: Record small rectangles at both horizontal edges and confirm the whole pill stays reachable.
+- [ ] not yet run by user: Record on secondary monitors at 100/125/150/200%, including a negative-origin arrangement; confirm correctly sized, crisp overlays on that monitor.
+- [ ] not yet run by user: With Notepad foreground, click Stop once; confirm Snapper does not activate, then Explorer reveals the single saved MP4 and the overlays/tray recording state disappear.
+- [ ] not yet run by user: Play both ordinary and full-monitor recordings and confirm neither pill nor border appears.
+- [ ] not yet run by user: Click Cancel; confirm no confirmation or error, no Explorer reveal, no remaining recording file after writer cleanup, and the normal tray icon.
+- [ ] not yet run by user: Press Esc repeatedly during recording, then stop by hotkey; confirm Esc did not cancel or truncate the recording.
+- [ ] not yet run by user: Click an underlying app control through the border and confirm click-through behavior.
+- [ ] not yet run by user: Confirm neither overlay appears in Alt+Tab or the taskbar.
+- [ ] not yet run by user: Stop by tray, hotkey, and Exit Snapper in separate recordings; confirm both overlays disappear each time and outputs are saved.
+- [ ] not yet run by user: Double-click Stop or quickly click Stop then Cancel; confirm only one action/file/reveal and no error.
+- [ ] not yet run by user: Change taskbar work area during recording and confirm repositioning without a stop; change DPI and confirm stop/save, then correctly sized overlays in a fresh recording.
+- [ ] not yet run by user: Record past ten minutes near an edge and confirm `10:00` widens the pill while keeping it on screen.

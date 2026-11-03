@@ -6,6 +6,12 @@ public static class DisplayGeometry
     public const int BaseDpi = 96;
     private const double Epsilon = 1e-6;
 
+    /// <summary>Scale overloads are for a visual's current DPI scale; int overloads take monitor DPI.</summary>
+    public static double PixelsToDips(double pixels, double scale) => pixels / scale;
+    public static double DipsToPixels(double dips, double scale) => dips * scale;
+    public static PixelSize PixelSizeForDips(SizeD size, double scale) =>
+        new((int)Math.Ceiling(DipsToPixels(size.Width, scale)), (int)Math.Ceiling(DipsToPixels(size.Height, scale)));
+
     public static double PixelsToDips(double pixels, int dpi) => pixels * BaseDpi / dpi;
     public static double DipsToPixels(double dips, int dpi) => dips * dpi / BaseDpi;
     public static PointD ToLocalDips(PointD global, DisplayInfo d) =>

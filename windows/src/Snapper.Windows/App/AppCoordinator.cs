@@ -25,6 +25,7 @@ internal sealed class AppCoordinator : IDisposable
     private HotkeyManager? hotkeys;
     private bool disposed;
     private RecordingSession? recording;
+    private RecordingOverlayController? recordingOverlay;
     private readonly RecordingTerminationDecision termination = new();
     private ShutdownBlocker? shutdownBlocker;
     private readonly SelectionOverlayController overlay;
@@ -150,7 +151,15 @@ internal sealed class AppCoordinator : IDisposable
             }
             // 0045/0046: format and quality are deliberately MP4 High until export conversion lands; 0037 adds microphone.
             recording = new RecordingSession(configuration, display, path, d3d, Displays,
-                onStarted: () => { }, onStopping: () => { }, onEnded: RecordingEnded);
+                onStarted: () =>
+                {
+                    var recordedRect = new PixelRect(display.Bounds.X + configuration.SourceRect.X,
+                        display.Bounds.Y + configuration.SourceRect.Y, configuration.PixelWidth, configuration.PixelHeight);
+                    // Pill and border set WDA_EXCLUDEFROMCAPTURE before first show; Windows has no app-level filter.
+                    recordingOverlay = new RecordingOverlayController(display, recordedRect, followsWindow: false,
+                        Stopwatch.GetTimestamp(), StopRecording, CancelRecording, Displays);
+                    recordingOverlay.Show();
+                }, onStopping: DismissRecordingOverlay, onEnded: RecordingEnded);
             tray?.SetRecording(true);
             shutdownBlocker?.SetReason(RecordingTerminationDecision.ShutdownBlockReason);
             recording.Start();
@@ -158,16 +167,23 @@ internal sealed class AppCoordinator : IDisposable
         catch (Exception error)
         {
             Debug.WriteLine($"Snapper: Starting recording: {error}");
+            DismissRecordingOverlay();
             recording = null;
             Send(new AppModeEvent.RecordingEnded());
             tray?.SetRecording(false); shutdownBlocker?.SetReason(null);
             ErrorAlerts.ShowError("Couldn't record the screen", error.Message);
         }
     }
-    public void StopRecording() => recording?.Stop();
-    public void CancelRecording() => recording?.Cancel();
+    private void DismissRecordingOverlay()
+    {
+        recordingOverlay?.Dismiss();
+        recordingOverlay = null;
+    }
+    public void StopRecording() { DismissRecordingOverlay(); recording?.Stop(); }
+    public void CancelRecording() { DismissRecordingOverlay(); recording?.Cancel(); }
     private void RecordingEnded()
     {
+        DismissRecordingOverlay();
         recording = null;
         Send(new AppModeEvent.RecordingEnded());
         tray?.SetRecording(false); shutdownBlocker?.SetReason(null);
@@ -259,6 +275,7 @@ internal sealed class AppCoordinator : IDisposable
     {
         if (disposed) return;
         disposed = true;
+        DismissRecordingOverlay();
         settingsWindow?.Dispose();
         settingsWindow = null;
         Settings.PropertyChanged -= SettingsChanged;
