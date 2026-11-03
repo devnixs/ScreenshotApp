@@ -331,3 +331,36 @@ No PRD update is needed: this spec doesn't change product behavior. The design d
 - Export, ⌘S, ⌘C, "Discard changes?" and the quit prompt: **0020**.
 - Persisting the settings type itself and the preset definitions: **0003**.
 - Marquee or multi-selection, copy/paste or duplication of shapes, arrow-key nudging, z-order changes, hover cursors, and live color preview while dragging in the color panel. None of these are in PRD §8.2.
+
+## Verification status
+
+- Date: 2026-11-03 (Europe/Paris).
+- `xcodegen generate`: succeeded.
+- `xcodebuild -scheme Snapper -configuration Debug build`: **BUILD SUCCEEDED**.
+- `xcodebuild -scheme Snapper test`: **TEST SUCCEEDED**, 334 tests in 55 suites passed (15 new editing/style/hit/key/color tests).
+- Build emitted only the routine AppIntents metadata notice; the test host emitted macOS `com.apple.linkd.autoShortcut` connection diagnostics without test failures.
+- No GUI/TCC paths were manually exercised. Selection adornments remain canvas-only, outside `ShapeRenderer`; export verification is deferred to 0020.
+- `AGENTS.md` now lists editing drag state, selection hit-testing, and toolbar style decisions among pure tested policies. PRD behavior is unchanged.
+
+Manual verification (all pending):
+
+- [ ] not yet run by user — Press ⌘⇧6 and capture an area. In the annotation window, draw two rectangles (R) and one arrow (A), with the second rectangle overlapping the first. Expected: no shape shows handles after it is drawn.
+- [ ] not yet run by user — Press V. Click the first rectangle. Expected: 4 corner handles. Click the arrow. Expected: 2 endpoint handles, and the rectangle's handles disappear. Click empty canvas. Expected: no handles.
+- [ ] not yet run by user — Click the overlap area of the two rectangles. Expected: the one drawn last is selected.
+- [ ] not yet run by user — Drag a rectangle's body. Expected: it moves smoothly. Press ⌘Z once. Expected: it jumps back to where it was. Press ⇧⌘Z. Expected: it moves again.
+- [ ] not yet run by user — Drag each of the 4 corner handles in turn. Expected: the opposite corner stays put. Undo all 4 with 4 presses of ⌘Z.
+- [ ] not yet run by user — Drag a corner handle while holding Shift. Expected: it stays a square. Release Shift mid-drag without moving. Expected: it snaps back to a free rectangle.
+- [ ] not yet run by user — Drag each arrow endpoint. Then drag one with Shift. Expected: the angle snaps to 0°/45°/90°… around the other endpoint.
+- [ ] not yet run by user — Resize the window much smaller and larger (or zoom, if 0017 supports it). Expected: handles stay the same on-screen size and are equally easy to grab.
+- [ ] not yet run by user — Click a shape without moving the mouse. Expected: Edit ▸ Undo still undoes the previous real edit (the click added no step).
+- [ ] not yet run by user — Select a shape and press ⌫. Expected: it is deleted. ⌘Z brings it back. Repeat with fn-⌫ (forward delete) and with Edit ▸ Delete.
+- [ ] not yet run by user — Select a red rectangle and click the blue swatch. Expected: the rectangle turns blue and the blue swatch is highlighted. ⌘Z → red again. ⇧⌘Z → blue.
+- [ ] not yet run by user — With the rectangle selected, click "+". The system color panel opens showing blue. Drag around the color wheel. Expected: the shape changes once, when you release the mouse. ⌘Z reverts exactly that one pick. The "+" button is highlighted (custom color).
+- [ ] not yet run by user — With a shape selected, click L. Expected: its stroke thickens and L is highlighted. ⌘Z reverts it.
+- [ ] not yet run by user — Select a green M shape, then a red S shape. Expected: the toolbar follows each selection. Deselect (Esc). Expected: the toolbar shows the last style you *picked*, not the selected shape's style.
+- [ ] not yet run by user — With nothing selected, pick yellow and S, then draw a rectangle. Expected: yellow, thin.
+- [ ] not yet run by user — Press Esc with a shape selected. Expected: it deselects and the window stays open. Press Esc again with nothing selected. Expected: nothing happens and the window stays open. Start dragging a shape and press Esc before releasing. Expected: the shape snaps back and is deselected.
+- [ ] not yet run by user — With nothing to undo (fresh window), open the Edit menu. Expected: Undo and Redo are disabled, and Delete is disabled with no selection.
+- [ ] not yet run by user — Open a second annotation window (⌘⇧6 again). Expected: it starts with the last-picked color and stroke. Select a shape in each window. Undo in one window doesn't affect the other. With the color panel open, click into the other window and pick a color. Expected: only that window's selected shape changes.
+- [ ] not yet run by user — Pick purple and L, then quit Snapper (menu ▸ Quit) and relaunch. Press ⌘⇧6. Expected: the toolbar shows purple and L, and a new rectangle is purple and thick.
+- [ ] not yet run by user — Fresh defaults check (optional): `defaults delete com.thera-engineering.snapper`, relaunch, press ⌘⇧6. Expected: red and M.

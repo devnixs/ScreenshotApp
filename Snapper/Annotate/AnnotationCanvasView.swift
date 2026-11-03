@@ -1,19 +1,24 @@
 import AppKit
 
 @MainActor
-final class AnnotationCanvasView: NSView {
-    var document: AnnotationDocument
+final class AnnotationCanvasView: NSView, NSMenuItemValidation {
+    var document: AnnotationDocument { didSet { onDocumentChange?() } }
     let image: CGImage
     var currentTool: AnnotationTool = .rectangle {
         didSet {
-            gesture = nil
-            previewShape = nil
+            abortDrag()
+            if currentTool != .select { document.select(id: nil) }
             needsDisplay = true
             window?.invalidateCursorRects(for: self)
         }
     }
     var currentColor: RGBAColor
     var currentStrokeWidth: StrokeWidth
+    var onDocumentChange: (() -> Void)?
+    private var dragSession: ShapeDragSession?
+    private var dragPoint: CGPoint?
+    private(set) var dragPreview: AnnotationShape?
+    var isDragging: Bool { dragSession != nil || gesture != nil }
     var onToolChange: ((AnnotationTool) -> Void)?
     private var gesture: AnnotationDrawingGesture?
     private(set) var previewShape: AnnotationShape?
@@ -42,21 +47,61 @@ final class AnnotationCanvasView: NSView {
         let transform = canvasTransform
         guard transform.scale > 0, let context = NSGraphicsContext.current?.cgContext else { return }
         context.saveGState()
-        defer { context.restoreGState() }
         context.translateBy(x: transform.imageRectInView.minX, y: transform.imageRectInView.minY)
         context.scaleBy(x: transform.scale, y: transform.scale)
         context.clip(to: CGRect(origin: .zero, size: document.imagePixelSize))
         ShapeRenderer.drawImage(image, in: context)
-        ShapeRenderer.draw(document.shapes, pixelsPerPoint: document.pixelsPerPoint, in: context)
+        ShapeRenderer.draw(document.shapes.map { $0.id == dragPreview?.id ? (dragPreview ?? $0) : $0 }, pixelsPerPoint: document.pixelsPerPoint, in: context)
         if let previewShape { ShapeRenderer.draw(previewShape, pixelsPerPoint: document.pixelsPerPoint, in: context) }
+        context.restoreGState()
+        drawSelection(transform: transform)
+    }
+
+    private func drawSelection(transform: CanvasTransform) {
+        guard currentTool == .select, let selected = document.selectedShape else { return }
+        let shape = dragPreview ?? selected
+        NSColor.controlAccentColor.setStroke()
+        if case .text = shape.kind {
+            let path = NSBezierPath(rect: transform.viewRect(fromImage: shape.bounds(pixelsPerPoint: document.pixelsPerPoint)))
+            path.setLineDash([4, 3], count: 2, phase: 0)
+            path.lineWidth = 1
+            path.stroke()
+        }
+        for (_, point) in shape.handles {
+            let center = transform.viewPoint(fromImage: point)
+            let rect = CGRect(x: center.x - 4, y: center.y - 4, width: 8, height: 8)
+            let path: NSBezierPath
+            if case .arrow = shape.kind { path = NSBezierPath(ovalIn: rect) } else { path = NSBezierPath(rect: rect) }
+            NSColor.white.setFill()
+            path.fill()
+            path.lineWidth = 1
+            path.stroke()
+        }
     }
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
+        if currentTool == .select {
+            guard let point = canvasTransform.imagePoint(fromView: convert(event.locationInWindow, from: nil)) else { return }
+            let kind: ShapeDragSession.Kind
+            switch CanvasHitTester.hitTest(point, in: document, transform: canvasTransform) {
+            case .handle(_, let handle): kind = .resize(handle)
+            case .shape(let id): document.select(id: id); kind = .move
+            case .none: document.select(id: nil); needsDisplay = true; return
+            }
+            if let shape = document.selectedShape {
+                dragSession = ShapeDragSession(original: shape, kind: kind, startPoint: point,
+                                               imageBounds: CGRect(origin: .zero, size: document.imagePixelSize))
+                dragPoint = point
+            }
+            needsDisplay = true
+            return
+        }
         gesture = AnnotationDrawingGesture(tool: currentTool, viewPoint: convert(event.locationInWindow, from: nil),
                                           transform: canvasTransform, color: currentColor, strokeWidth: currentStrokeWidth)
     }
     override func mouseDragged(with event: NSEvent) {
+        dragPoint = canvasTransform.imagePoint(fromView: convert(event.locationInWindow, from: nil))
         gesture?.update(viewPoint: convert(event.locationInWindow, from: nil))
         updatePreview(constrained: event.modifierFlags.contains(.shift))
     }
@@ -64,10 +109,16 @@ final class AnnotationCanvasView: NSView {
         updatePreview(constrained: event.modifierFlags.contains(.shift))
     }
     private func updatePreview(constrained: Bool) {
+        if let dragPoint { dragPreview = dragSession?.preview(at: dragPoint, shiftHeld: constrained) }
         previewShape = gesture?.shape(constrained: constrained, completing: false)
         needsDisplay = true
     }
     override func mouseUp(with event: NSEvent) {
+        if let session = dragSession, let point = canvasTransform.imagePoint(fromView: convert(event.locationInWindow, from: nil)),
+           let shape = session.finish(at: point, shiftHeld: event.modifierFlags.contains(.shift)) { document.replace(shape) }
+        dragSession = nil
+        dragPreview = nil
+        dragPoint = nil
         gesture?.update(viewPoint: convert(event.locationInWindow, from: nil))
         if let shape = gesture?.shape(constrained: event.modifierFlags.contains(.shift), completing: true) { document.add(shape) }
         gesture = nil
@@ -75,6 +126,13 @@ final class AnnotationCanvasView: NSView {
         needsDisplay = true
     }
     override func keyDown(with event: NSEvent) {
+        if let command = CanvasKeyCommand(keyCode: event.keyCode, modifiers: event.modifierFlags) {
+            switch command {
+            case .deleteSelection: delete(nil)
+            case .deselect: cancelOperation(nil)
+            }
+            return
+        }
         let forbidden: NSEvent.ModifierFlags = [.command, .option, .control]
         let characters = event.charactersIgnoringModifiers ?? ""
         // The visible but disabled Text tool must not beep or change tools before 0019.
@@ -84,6 +142,43 @@ final class AnnotationCanvasView: NSView {
                                                 textToolEnabled: false) {
             onToolChange?(tool)
         } else { super.keyDown(with: event) }
+    }
+    private func abortDrag() {
+        gesture = nil
+        previewShape = nil
+        dragSession = nil
+        dragPreview = nil
+        dragPoint = nil
+        needsDisplay = true
+    }
+    override func cancelOperation(_ sender: Any?) {
+        abortDrag()
+        document.select(id: nil)
+    }
+    @objc func delete(_ sender: Any?) {
+        guard !isDragging, let id = document.selectedShapeID else { return }
+        document.delete(id: id)
+        needsDisplay = true
+    }
+    @objc func undo(_ sender: Any?) {
+        guard !isDragging else { return }
+        document.undo()
+        if currentTool != .select { document.select(id: nil) }
+        needsDisplay = true
+    }
+    @objc func redo(_ sender: Any?) {
+        guard !isDragging else { return }
+        document.redo()
+        if currentTool != .select { document.select(id: nil) }
+        needsDisplay = true
+    }
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        switch menuItem.action {
+        case #selector(undo(_:)): return !isDragging && document.canUndo
+        case #selector(redo(_:)): return !isDragging && document.canRedo
+        case #selector(delete(_:)): return !isDragging && document.selectedShape != nil
+        default: return true
+        }
     }
     override func resetCursorRects() {
         super.resetCursorRects()

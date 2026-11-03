@@ -3,10 +3,18 @@ import AppKit
 @MainActor
 final class AnnotationWindowController: NSWindowController, NSWindowDelegate, NSToolbarDelegate {
     static let toolsIdentifier = NSToolbarItem.Identifier("AnnotationTools")
+    static let styleIdentifier = NSToolbarItem.Identifier("AnnotationStyle")
+    private let settings: AppSettings
+    private(set) var toolbarStyleState: ToolbarStyleState
+    private let styleControls = NSStackView()
+    private var swatches: [AnnotationSwatchButton] = []
+    private let customColor = AnnotationSwatchButton(title: "+", target: nil, action: nil)
+    private let stroke = NSSegmentedControl()
+    private var suppressColorAction = false
     let canvas: AnnotationCanvasView
     var onClose: ((AnnotationWindowController) -> Void)?
     private let tools = NSSegmentedControl()
-    private let toolbarItems: [NSToolbarItem.Identifier] = [toolsIdentifier]
+    private let toolbarItems: [NSToolbarItem.Identifier] = [toolsIdentifier, styleIdentifier]
     var currentTool: AnnotationTool = .rectangle {
         didSet {
             canvas.currentTool = currentTool
@@ -15,6 +23,8 @@ final class AnnotationWindowController: NSWindowController, NSWindowDelegate, NS
     }
 
     init(captured: CapturedImage, captureDate: Date, screen: NSScreen, settings: AppSettings, existingOrigins: [CGPoint]) {
+        self.settings = settings
+        toolbarStyleState = ToolbarStyleState(currentStyle: ShapeStyle(color: settings.annotationColor, strokeWidth: settings.annotationStrokeWidth))
         canvas = AnnotationCanvasView(image: captured, color: settings.annotationColor, strokeWidth: settings.annotationStrokeWidth)
         let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 480, height: 300),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
@@ -42,6 +52,8 @@ final class AnnotationWindowController: NSWindowController, NSWindowDelegate, NS
         tools.setEnabled(false, forSegment: AnnotationTool.text.segmentIndex)
         tools.selectedSegment = currentTool.segmentIndex
         canvas.onToolChange = { [weak self] tool in self?.currentTool = tool }
+        canvas.onDocumentChange = { [weak self] in self?.refreshStyle() }
+        configureStyleControls()
         let toolbar = NSToolbar(identifier: "AnnotationToolbar")
         toolbar.delegate = self
         toolbar.displayMode = .iconOnly
@@ -69,11 +81,129 @@ final class AnnotationWindowController: NSWindowController, NSWindowDelegate, NS
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { toolbarItems }
     func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier identifier: NSToolbarItem.Identifier,
                  willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
-        guard identifier == Self.toolsIdentifier else { return nil }
+        guard identifier == Self.toolsIdentifier || identifier == Self.styleIdentifier else { return nil }
         let item = NSToolbarItem(itemIdentifier: identifier)
-        item.label = "Tools"
-        item.view = tools
+        item.label = identifier == Self.toolsIdentifier ? "Tools" : "Style"
+        item.view = identifier == Self.toolsIdentifier ? tools : styleControls
         return item
     }
-    func windowWillClose(_ notification: Notification) { onClose?(self) }
+    private func configureStyleControls() {
+        styleControls.orientation = .horizontal
+        styleControls.spacing = 4
+        for (index, preset) in ColorPreset.allCases.enumerated() {
+            let button = AnnotationSwatchButton(title: "", target: self, action: #selector(swatchPicked(_:)))
+            button.tag = index
+            button.swatchColor = preset.color.nsColor
+            button.toolTip = preset.displayName
+            button.setAccessibilityLabel(preset.displayName)
+            swatches.append(button)
+            styleControls.addArrangedSubview(button)
+        }
+        customColor.target = self
+        customColor.action = #selector(openColorPanel(_:))
+        customColor.toolTip = "Custom color"
+        customColor.setAccessibilityLabel("Custom color")
+        styleControls.addArrangedSubview(customColor)
+        stroke.segmentCount = 3
+        stroke.trackingMode = .selectOne
+        for (index, label) in ["S", "M", "L"].enumerated() {
+            stroke.setLabel(label, forSegment: index)
+            stroke.setWidth(26, forSegment: index)
+        }
+        stroke.setAccessibilityLabel("Stroke width")
+        stroke.target = self
+        stroke.action = #selector(strokePicked(_:))
+        styleControls.addArrangedSubview(stroke)
+        refreshStyle()
+    }
+    func refreshStyle() {
+        _ = toolbarStyleState.reduce(.selectedShapeStyleChanged(canvas.document.selectedShape?.style))
+        canvas.currentColor = toolbarStyleState.currentStyle.color
+        canvas.currentStrokeWidth = toolbarStyleState.currentStyle.strokeWidth
+        for (index, button) in swatches.enumerated() {
+            button.isHighlightedSwatch = toolbarStyleState.swatchSelection == .preset(index)
+        }
+        customColor.isHighlightedSwatch = toolbarStyleState.swatchSelection == .custom
+        stroke.selectedSegment = StrokeWidth.allCases.firstIndex(of: toolbarStyleState.displayedStyle.strokeWidth) ?? 1
+        canvas.needsDisplay = true
+    }
+    private func pick(_ event: ToolbarStyleEvent) {
+        guard !canvas.isDragging else { return }
+        let effects = toolbarStyleState.reduce(event)
+        if var shape = canvas.document.selectedShape {
+            if let color = effects.applyColorToSelection { shape.color = color }
+            if let width = effects.applyStrokeWidthToSelection { shape.strokeWidth = width }
+            canvas.document.replace(shape)
+        }
+        if let color = effects.persistColor { settings.annotationColor = color }
+        if let width = effects.persistStrokeWidth { settings.annotationStrokeWidth = width }
+        refreshStyle()
+        window?.makeFirstResponder(canvas)
+    }
+    @objc private func swatchPicked(_ sender: NSButton) { pick(.colorPicked(RGBAColor.presets[sender.tag])) }
+    @objc private func strokePicked(_ sender: NSSegmentedControl) {
+        guard StrokeWidth.allCases.indices.contains(sender.selectedSegment) else { return }
+        pick(.strokeWidthPicked(StrokeWidth.allCases[sender.selectedSegment]))
+    }
+    @objc private func openColorPanel(_ sender: Any?) {
+        retargetColorPanel()
+        NSColorPanel.shared.orderFront(nil)
+    }
+    private func retargetColorPanel() {
+        let panel = NSColorPanel.shared
+        Self.colorPanelOwner = self
+        suppressColorAction = true
+        panel.showsAlpha = false
+        panel.isContinuous = false
+        panel.color = toolbarStyleState.displayedStyle.color.nsColor
+        panel.setTarget(self)
+        panel.setAction(#selector(colorPanelDidPick(_:)))
+        suppressColorAction = false
+    }
+    @objc private func colorPanelDidPick(_ panel: NSColorPanel) {
+        guard !suppressColorAction, let color = RGBAColor(nsColor: panel.color) else { return }
+        pick(.colorPicked(color))
+    }
+    func windowDidBecomeKey(_ notification: Notification) {
+        window?.makeFirstResponder(canvas)
+        if NSColorPanel.shared.isVisible { retargetColorPanel() }
+    }
+    func windowWillClose(_ notification: Notification) {
+        // NSColorPanel exposes setters but no target getter. Clear only our panel ownership.
+        if Self.colorPanelOwner === self {
+            NSColorPanel.shared.setTarget(nil)
+            Self.colorPanelOwner = nil
+        }
+        onClose?(self)
+    }
+    private static weak var colorPanelOwner: AnnotationWindowController?
+
+}
+
+/// View-space toolbar adornments; excluded from the shared shape renderer.
+@MainActor
+private final class AnnotationSwatchButton: NSButton {
+    var swatchColor: NSColor? { didSet { needsDisplay = true } }
+    var isHighlightedSwatch = false { didSet { needsDisplay = true } }
+    override var intrinsicContentSize: NSSize { NSSize(width: 24, height: 26) }
+    override func draw(_ dirtyRect: NSRect) {
+        let rect = bounds.insetBy(dx: 4, dy: 5)
+        let path = NSBezierPath(ovalIn: rect)
+        (swatchColor ?? .controlBackgroundColor).setFill()
+        path.fill()
+        NSColor.separatorColor.setStroke()
+        path.lineWidth = 1
+        path.stroke()
+        if swatchColor == nil {
+            let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 16), .foregroundColor: NSColor.labelColor]
+            let size = title.size(withAttributes: attributes)
+            title.draw(at: CGPoint(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2), withAttributes: attributes)
+        }
+        if isHighlightedSwatch {
+            NSColor.controlAccentColor.setStroke()
+            let ring = NSBezierPath(ovalIn: rect.insetBy(dx: -2, dy: -2))
+            ring.lineWidth = 2
+            ring.stroke()
+        }
+    }
 }
