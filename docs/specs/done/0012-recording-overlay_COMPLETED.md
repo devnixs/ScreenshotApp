@@ -347,3 +347,43 @@ a **Cancel** button that throws it away, and none of that ever shows up in the v
 - Microphone audio: **0014-microphone-audio**.
 - Selection overlay and its Esc handling: **0007** / **0009**.
 - Pause/resume, countdown, dragging the pill, click highlighting: not in the PRD (§2 non-goals).
+
+## Verification status
+
+Implemented on 2026-11-03. `xcodegen generate` succeeded;
+`xcodebuild -scheme Snapper -configuration Debug build` **BUILD SUCCEEDED**;
+`xcodebuild -scheme Snapper test` **TEST SUCCEEDED**, **234 tests in 40 suites passed**.
+`git diff --check` passed. No PRD or AGENTS.md behavior changes were needed.
+
+Pure placement, border geometry and elapsed-time tests cover the specified cases, display origins,
+1×/2× display scales, and pill growth. Existing recording lifecycle tests cover Cancel's delete /
+no reveal / no alert mapping, failures, timeouts and duplicate stop requests.
+
+The session now requires exclusion of this exact process before starting capture. A tiny offscreen
+nonactivating window keeps the process discoverable while constructing the application filter;
+if it cannot be found, startup fails safely without showing the recording overlay. The visible
+controls are created only after successful stream startup. Session callbacks dismiss them before
+all stop, failure and termination effects. Cancel reuses the tested lifecycle, detaches the output
+before deletion and logs cleanup errors without showing alerts.
+
+GUI behavior, capture exclusion and actual recording output have **not** been manually verified.
+Run the Test plan's manual verification steps in a real GUI session with Screen Recording permission:
+
+- [ ] not yet run by user — Medium rectangle: dashed border, pill 8 pt below, timer increments without digit jitter.
+- [ ] not yet run by user — Bottom edge above Dock: pill moves above the area.
+- [ ] not yet run by user — Full-screen selection: pill stays visible inside the area above Dock.
+- [ ] not yet run by user — Left/right edge selections: pill stays fully on screen.
+- [ ] not yet run by user — Second display: pill and border stay on the selected display.
+- [ ] not yet run by user — With another app frontmost, type then click Stop once: focus stays there, one file is saved/revealed, overlays disappear and icon resets.
+- [ ] not yet run by user — Play rectangle and full-screen videos: neither pill nor dashed border appears.
+- [ ] not yet run by user — Cancel: no confirmation, Finder reveal, final file or temporary recording remains; icon resets.
+- [ ] not yet run by user — Esc leaves recording running; shortcut Stop saves the complete duration.
+- [ ] not yet run by user — Click through the dashed border to an underlying control.
+- [ ] not yet run by user — Stop via menu bar and shortcut: both remove pill and border.
+- [ ] not yet run by user — Switch Spaces / full-screen app: controls remain visible and clickable.
+- [ ] not yet run by user — Double-click Stop: only one file/reveal, no error.
+- [ ] not yet run by user — Disconnect the recording display or trigger a recording failure: overlays disappear; stop/error behavior matches 0011.
+- [ ] not yet run by user — Change Dock placement/visibility or display geometry while recording: pill placement refreshes.
+- [ ] not yet run by user — Quit while recording: overlays disappear and recording saves before exit.
+
+Rebuilding with a different signature can reset Screen Recording permission.

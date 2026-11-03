@@ -17,6 +17,7 @@ final class AppCoordinator: NSObject {
     private var statusItemController: StatusItemController?
     private var modeMachine = AppModeMachine()
     private var recordingSession: RecordingSession?
+    private var recordingOverlay: RecordingOverlayController?
     private var termination = RecordingTerminationDecision()
 
     var mode: AppMode { modeMachine.mode }
@@ -49,7 +50,7 @@ final class AppCoordinator: NSObject {
         case .showOverlay(let purpose): beginSelection(for: purpose)
         case .completeSelection: break // The overlay result carries the region to the pipeline.
         case .stopRecording:
-            recordingSession?.stop()
+            stopRecording()
         case .openMenu: statusItemController?.showMenu()
         case .openSettings: openSettings()
         }
@@ -117,6 +118,16 @@ final class AppCoordinator: NSObject {
             let session = RecordingSession(
                 configuration: RecordingConfigurationBuilder.build(display: display, selection: rect), outputURL: url,
                 showOnboarding: { [weak self] in self?.showOnboarding() },
+                onStarted: { [weak self] in
+                    guard let self else { return }
+                    // RecordingSession's application exclusion also covers these later-created windows.
+                    let overlay = RecordingOverlayController(display: display, recordedRect: rect, startedAt: .now,
+                        onStop: { [weak self] in self?.stopRecording() },
+                        onCancel: { [weak self] in self?.cancelRecording() })
+                    self.recordingOverlay = overlay
+                    overlay.show()
+                },
+                onStopping: { [weak self] in self?.dismissRecordingOverlay() },
                 onEnded: { [weak self] in self?.recordingEnded() })
             recordingSession = session
             statusItemController?.setRecording(true)
@@ -127,7 +138,23 @@ final class AppCoordinator: NSObject {
         }
     }
 
+    private func dismissRecordingOverlay() {
+        recordingOverlay?.dismiss()
+        recordingOverlay = nil
+    }
+
+    private func stopRecording() {
+        dismissRecordingOverlay()
+        recordingSession?.stop()
+    }
+
+    private func cancelRecording() {
+        dismissRecordingOverlay()
+        recordingSession?.cancel()
+    }
+
     private func recordingEnded() {
+        dismissRecordingOverlay()
         recordingSession = nil
         send(.recordingEnded)
         statusItemController?.setRecording(false)
@@ -136,7 +163,7 @@ final class AppCoordinator: NSObject {
 
     func applicationShouldTerminate() -> NSApplication.TerminateReply {
         if termination.request(recordingActive: recordingSession != nil) {
-            recordingSession?.stop()
+            stopRecording()
             return .terminateLater
         }
         return .terminateNow
