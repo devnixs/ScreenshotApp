@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Windows.Win32;
 using Windows.Win32.Foundation;
 using Snapper.Core.Geometry;
+using Snapper.Windows.Annotate;
 using Snapper.Core.Recording;
 using Snapper.Windows.Recording;
 using System.ComponentModel;
@@ -22,6 +23,7 @@ internal sealed class AppCoordinator : IDisposable
 {
     private TrayIconController? tray;
     private SettingsWindowController? settingsWindow;
+    private readonly AnnotationWindowManager annotations;
     private readonly AppModeMachine modeMachine = new();
     private readonly Dispatcher dispatcher = Dispatcher.CurrentDispatcher;
     private HotkeyManager? hotkeys;
@@ -45,6 +47,7 @@ internal sealed class AppCoordinator : IDisposable
 
     public AppCoordinator()
     {
+        annotations = new AnnotationWindowManager(Settings);
         Settings.SaveFailed += SettingsSaveFailed;
         Displays = new DisplayChangeWatcher(Dispatcher.CurrentDispatcher);
         overlay = new SelectionOverlayController(Displays);
@@ -90,8 +93,6 @@ internal sealed class AppCoordinator : IDisposable
     private async void BeginSelection(CapturePurpose purpose)
     {
         tray?.CloseMenu();
-        var annotateForeground = new ForegroundRestorer();
-        if (purpose == CapturePurpose.Annotate) annotateForeground.Remember();
         try
         {
             var result = await overlay.SelectRegionAsync(purpose);
@@ -100,22 +101,7 @@ internal sealed class AppCoordinator : IDisposable
             Send(new AppModeEvent.SelectionFinished());
             if (purpose == CapturePurpose.Record) BeginRecording(result);
             else if (purpose == CapturePurpose.Screenshot) await TakeScreenshot(result);
-            else
-            {
-                switch (result)
-                {
-                    case RectSelection(var display, var rect):
-                        Trace.WriteLine($"Selection for {purpose}: display {display.DeviceName}, rect {rect} px"); break;
-                    case WindowSelectionResult(var handle, var frame, var display):
-                        Trace.WriteLine($"Selection for {purpose}: window {handle}, display {display.DeviceName}, frame {frame} px"); break;
-                    default: throw new UnreachableException();
-                }
-                if (purpose == CapturePurpose.Annotate)
-                {
-                    Debug.WriteLine("Snapper: Annotate isn't available yet");
-                    annotateForeground.Restore();
-                }
-            }
+            else await TakeAnnotation(result);
         }
         catch (Exception error)
         {
@@ -242,13 +228,7 @@ internal sealed class AppCoordinator : IDisposable
         var date = DateTime.Now;
         try
         {
-            var capturer = new ScreenshotCapturer(d3d);
-            var image = selection switch
-            {
-                RectSelection(var display, var rect) => await capturer.CaptureMonitorRegionAsync(display, rect),
-                WindowSelectionResult(var handle, _, var display) => await capturer.CaptureWindowAsync(handle, scaleFactor: display.Scale),
-                _ => throw new UnreachableException()
-            };
+            var image = await CaptureAsync(selection);
             if (disposed) return;
             if (Settings.PlayShutterSound) shutterSound.Play();
             var (png, dib) = await Task.Run(() => (PngEncoder.Encode(image), DibEncoder.FromBgra(image.Bgra, image.Width, image.Height)));
@@ -260,6 +240,38 @@ internal sealed class AppCoordinator : IDisposable
         catch (Exception error)
         {
             Debug.WriteLine($"Snapper: Screenshot failed: {error}");
+            if (!disposed) ErrorAlerts.ShowCaptureFailure(error);
+        }
+    }
+    private Task<CapturedImage> CaptureAsync(SelectionResult selection)
+    {
+        var capturer = new ScreenshotCapturer(d3d);
+        return selection switch
+        {
+            RectSelection(var display, var rect) => capturer.CaptureMonitorRegionAsync(display, rect),
+            WindowSelectionResult(var handle, _, var display) => capturer.CaptureWindowAsync(handle, scaleFactor: display.Scale),
+            _ => throw new UnreachableException()
+        };
+    }
+    private async Task TakeAnnotation(SelectionResult selection)
+    {
+        var date = DateTime.Now;
+        try
+        {
+            var image = await CaptureAsync(selection);
+            if (disposed) return;
+            if (Settings.PlayShutterSound) shutterSound.Play();
+            var display = selection switch
+            {
+                RectSelection(var selected, _) => selected,
+                WindowSelectionResult(_, _, var selected) => selected,
+                _ => throw new UnreachableException()
+            };
+            annotations.Open(image, display, date);
+        }
+        catch (Exception error)
+        {
+            Debug.WriteLine($"Snapper: Annotate capture failed: {error}");
             if (!disposed) ErrorAlerts.ShowCaptureFailure(error);
         }
     }
@@ -302,6 +314,7 @@ internal sealed class AppCoordinator : IDisposable
     }
     private void FinishExit()
     {
+        annotations.CloseAll();
         settingsWindow?.AllowClose();
         Dispose();
         Application.Current.Shutdown();
@@ -312,6 +325,7 @@ internal sealed class AppCoordinator : IDisposable
         if (disposed) return;
         disposed = true;
         DismissRecordingOverlay();
+        annotations.CloseAll();
         settingsWindow?.Dispose();
         settingsWindow = null;
         Settings.PropertyChanged -= SettingsChanged;

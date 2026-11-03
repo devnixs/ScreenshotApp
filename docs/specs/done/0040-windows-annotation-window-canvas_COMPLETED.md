@@ -306,3 +306,29 @@ As a Snapper user on Windows, I press Ctrl+Shift+6, select an area or a window, 
 - Copy & Close and Ctrl+Enter: **0044-windows-annotation-copy-and-close**.
 - The shape model, constraints, and arrow geometry (**0038**); the document, undo, and dirty state (**0039**); capture, shutter, and alerts (**0031**); window mode (**0032**); the overlay and its focus restore (**0030**).
 - Zoom controls and an app icon for the window (**0047** adds the icon). Neither is in the PRD for this spec.
+
+
+## Verification status
+
+Automated verification on 2026-11-03: `dotnet build windows/Snapper.slnx -c Debug` passed with **0 warnings and 0 errors**. `dotnet test windows/Snapper.slnx` passed **1,069 tests**, including **54 new cases**, with no failures or skips. `git diff --check` passed. Logs: `/tmp/snapper-0040-build.log` and `/tmp/snapper-0040-test.log`.
+
+Implemented the shared image-pixel renderer, native-DPI annotation window placement/focus, rectangle/arrow canvas, remembered per-window styles, toolbar and Color dialog, and the shared capture path. The existing `SelectionFocusPolicy` already handles the annotate exception and was reused. Existing color presets and color byte conversion were reused. The manager accepts the existing `CapturedImage` type and preserves its scale on fallback displays. All five toolbar glyph codepoints were checked against [Microsoft’s Segoe Fluent Icons reference](https://learn.microsoft.com/en-us/windows/apps/design/iconography/segoe-fluent-icons-font). PRD and AGENTS.md already cover this behavior and architecture; neither needed changes.
+
+GUI behavior has **not** been verified. On Windows 11:
+
+- [ ] not yet run by user: From Notepad, select an annotation rectangle; confirm the editor is focused in front with a taskbar button, the title uses the capture time, sound follows its setting, and no file or clipboard change occurs.
+- [ ] not yet run by user: Without clicking, use A/R/V; confirm tools switch, arrows draw, and T remains disabled in this slice.
+- [ ] not yet run by user: Disable shutter sound and choose file-only screenshot output; annotation still opens silently without writing a file.
+- [ ] not yet run by user: Use window selection on a partly covered window; confirm only that window appears, without shadow or covering content.
+- [ ] not yet run by user: Capture almost a full monitor; confirm centered placement at about 80% of the work area, with the correct image aspect ratio.
+- [ ] not yet run by user: Capture a small area; confirm minimum window size, centered neutral margins, and pixel-sharp natural-size display.
+- [ ] not yet run by user: Capture on 100% and 150% monitors, including a negative-origin monitor; confirm capture-monitor placement and alignment when moving the editor across DPIs.
+- [ ] not yet run by user: Open three matching captures; confirm cascading, independent documents, Ctrl+W/Alt+F4/X closing, and the tray remaining after all close.
+- [ ] not yet run by user: Draw rectangles, change Shift mid-drag without moving, and click without dragging; confirm square constraints, retained tool, and no click-only shape.
+- [ ] not yet run by user: Draw arrows with Shift; confirm angle snapping, filled heads, and butt-capped shafts ending at the head base.
+- [ ] not yet run by user: Start in a margin, drag outside the window, and press Esc during a drag; confirm margins do nothing, endpoints clamp to the image, and Esc aborts without closing.
+- [ ] not yet run by user: Pick presets, custom colors, and widths; confirm highlights, Color dialog cancellation, new-window/relaunch persistence, and independence of older windows.
+- [ ] not yet run by user: Resize the editor down and beyond natural image size; confirm shapes stay aligned and the image never upscales.
+- [ ] not yet run by user: With an editor focused, invoke the screenshot shortcut; confirm its overlay appears above the editor and capture works.
+- [ ] not yet run by user: Repeat annotation capture ten times alternating Notepad and File Explorer; confirm each new editor receives keyboard focus.
+- [ ] not yet run by user: Cancel annotation selection with Esc; confirm no editor opens and the previous app regains focus.

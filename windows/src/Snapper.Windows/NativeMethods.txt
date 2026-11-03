@@ -157,3 +157,9 @@ MMDeviceEnumerator
 EDataFlow
 ERole
 MF_E_NO_CAPTURE_DEVICES_AVAILABLE
+
+AdjustWindowRectExForDpi
+ChooseColor
+CHOOSECOLORW
+CHOOSECOLOR_FLAGS
+GetDpiForWindow
