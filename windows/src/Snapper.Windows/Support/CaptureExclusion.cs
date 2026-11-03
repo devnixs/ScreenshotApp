@@ -11,6 +11,7 @@ internal static class CaptureExclusion
 {
     private static readonly HashSet<HWND> windows = [];
     public static IReadOnlySet<HWND> RegisteredWindows { get; } = new ReadOnlySet<HWND>(windows);
+    public static IReadOnlySet<nint> RegisteredHandles => windows.Select(hwnd => (nint)hwnd).ToHashSet();
     public static bool Exclude(HWND hwnd)
     {
         if (PInvoke.SetWindowDisplayAffinity(hwnd, WINDOW_DISPLAY_AFFINITY.WDA_EXCLUDEFROMCAPTURE)) return true;

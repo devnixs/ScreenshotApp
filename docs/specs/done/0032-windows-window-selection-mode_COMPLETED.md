@@ -229,3 +229,28 @@ As a Snapper user on Windows, after pressing Ctrl+Shift+4 I can press Space, see
 - Opening a window capture in the annotation editor: **0040** (it calls `CaptureWindowAsync` and uses the same image).
 - Refreshing the window snapshot while the overlay is open, keyboard selection of windows, child windows, and capturing minimized windows: not in the PRD.
 - Window shadows: a PRD non-goal (§2).
+
+## Verification status
+
+Automated verification on 2026-11-03: `dotnet build windows/Snapper.slnx -c Debug` passed with **0 warnings and 0 errors**. `dotnet test windows/Snapper.slnx` passed **583 tests**, including **61 new cases**, with **0 failures and 0 skips**. Logs: `/tmp/snapper-0032-build.log` and `/tmp/snapper-0032-test.log`.
+
+The implementation extends the existing flat result hierarchy with `WindowSelectionResult(nint Handle, PixelRect Frame, DisplayInfo Display)`, alongside `RectSelection`; `WindowSelection` remains the pure resolver. The hit tester copies its inputs to keep the snapshot immutable. The shared capture routine inspects actual texture dimensions, recreates a growing window's frame pool at most once, and clips a second growth to its texture. `GraphicsCaptureItem` is a non-closable WinRT object; the session, pool, frames, native factory references, texture references, and device lease are explicitly released. PRD and AGENTS.md already cover the behavior and architecture, so neither required changes.
+
+GUI behavior has **not** been verified. Run these checks in a Windows 11 GUI session:
+
+- [ ] not yet run by user: With overlapping Notepad and Explorer windows, Ctrl+Shift+4 then Space switches to an arrow cursor and accent highlight that follows selectable windows; Snapper's overlay never highlights itself.
+- [ ] not yet run by user: Space again restores the crosshair and rectangle drag rendering.
+- [ ] not yet run by user: Space during a rectangle drag removes its rectangle/readout; mouse release captures nothing. Toggle back and use a new press to capture normally.
+- [ ] not yet run by user: Capture the visible part of a covered Notepad window. Confirm the complete Notepad image, clipboard/file/sound output, native physical dimensions, no covering app, shadow, margin, cursor, or overlay. Record rounded-corner appearance and whether a system capture border flashes.
+- [ ] not yet run by user: Capture a maximized window and confirm the PNG has no edge strips and its width equals the monitor width.
+- [ ] not yet run by user: On mixed-DPI monitors with a negative-origin monitor, capture a window on each; then span a window across them and confirm its highlight aligns on both and capture contains the whole window.
+- [ ] not yet run by user: Press in window mode on one monitor and release over a window on another; confirm selection follows the release point.
+- [ ] not yet run by user: Hover/click taskbar and empty wallpaper; confirm neither is selected and the overlay remains open.
+- [ ] not yet run by user: Minimized windows are skipped in favor of the selectable window behind them or no selection.
+- [ ] not yet run by user: Windows on another virtual desktop are never highlighted or selected.
+- [ ] not yet run by user: Esc in window mode closes all overlays and restores prior focus; a successful screenshot also restores prior focus.
+- [ ] not yet run by user: Hold Space for one second; confirm exactly one mode toggle without flicker.
+- [ ] not yet run by user: Close a window after the snapshot/hover but before click; confirm "Couldn't take screenshot" / "The window is no longer available." with no crash.
+- [ ] not yet run by user: Repeat a covered-window capture with Clipboard-only and File-only destinations; confirm the same output rules as rectangle captures.
+- [ ] not yet run by user: Capture an elevated Command Prompt; record whether capture succeeds or a short capture-error alert appears, with no crash.
+- [ ] not yet run by user: Ctrl+Shift+5 and Ctrl+Shift+6 window selections retain their interim stub behavior without crashing; annotation returns prior focus.

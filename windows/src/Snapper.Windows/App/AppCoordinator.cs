@@ -87,18 +87,22 @@ internal sealed class AppCoordinator : IDisposable
             if (disposed) return;
             if (result is null) { Send(new AppModeEvent.SelectionCancelled()); return; }
             Send(new AppModeEvent.SelectionFinished());
-            switch (result)
+            if (purpose == CapturePurpose.Screenshot) await TakeScreenshot(result);
+            else
             {
-                case RectSelection(var display, var rect):
-                    Trace.WriteLine($"Selection for {purpose}: display {display.DeviceName}, rect ({rect.X}, {rect.Y}, {rect.Width}, {rect.Height}) px");
-                    if (purpose == CapturePurpose.Screenshot) await TakeScreenshot(display, rect);
-                    else if (purpose == CapturePurpose.Annotate)
-                    {
-                        Debug.WriteLine("Snapper: Annotate isn't available yet");
-                        annotateForeground.Restore();
-                    }
-                    break;
-                default: throw new UnreachableException();
+                switch (result)
+                {
+                    case RectSelection(var display, var rect):
+                        Trace.WriteLine($"Selection for {purpose}: display {display.DeviceName}, rect {rect} px"); break;
+                    case WindowSelectionResult(var handle, var frame, var display):
+                        Trace.WriteLine($"Selection for {purpose}: window {handle}, display {display.DeviceName}, frame {frame} px"); break;
+                    default: throw new UnreachableException();
+                }
+                if (purpose == CapturePurpose.Annotate)
+                {
+                    Debug.WriteLine("Snapper: Annotate isn't available yet");
+                    annotateForeground.Restore();
+                }
             }
             // TODO(0034): start RecordingSession here.
             if (purpose == CapturePurpose.Record) Send(new AppModeEvent.RecordingEnded());
@@ -109,12 +113,18 @@ internal sealed class AppCoordinator : IDisposable
             Send(new AppModeEvent.SelectionCancelled());
         }
     }
-    private async Task TakeScreenshot(Snapper.Core.Geometry.DisplayInfo display, Snapper.Core.Geometry.PixelRect rect)
+    private async Task TakeScreenshot(SelectionResult selection)
     {
         var date = DateTime.Now;
         try
         {
-            var image = await new ScreenshotCapturer(d3d).CaptureMonitorRegionAsync(display, rect);
+            var capturer = new ScreenshotCapturer(d3d);
+            var image = selection switch
+            {
+                RectSelection(var display, var rect) => await capturer.CaptureMonitorRegionAsync(display, rect),
+                WindowSelectionResult(var handle, _, var display) => await capturer.CaptureWindowAsync(handle, scaleFactor: display.Scale),
+                _ => throw new UnreachableException()
+            };
             if (disposed) return;
             if (Settings.PlayShutterSound) shutterSound.Play();
             var (png, dib) = await Task.Run(() => (PngEncoder.Encode(image), DibEncoder.FromBgra(image.Bgra, image.Width, image.Height)));

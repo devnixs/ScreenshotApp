@@ -76,6 +76,12 @@ internal sealed class SelectionOverlayWindow : Window
             Debug.WriteLine($"Snapper: Overlay bounds/DPI mismatch on {Display.DeviceName}: {r}, {VisualTreeHelper.GetDpi(this)}");
     }
     public void SetFrame(OverlayFrame frame) => surface.SetFrame(frame);
+    public void SetMode(SelectionMode mode, PixelRect? frame, Color accent)
+    {
+        Cursor = mode == SelectionMode.Window ? Cursors.Arrow : Cursors.Cross;
+        surface.SetWindowMode(mode == SelectionMode.Window,
+            frame is { } r ? WindowHighlightGeometry.LocalRect(r, Display) : null, accent);
+    }
     public SizeD MeasureLabel(string text) => surface.MeasureLabel(text);
     public void CloseFromController()
     {
@@ -97,9 +103,9 @@ internal sealed class SelectionOverlayWindow : Window
         }
         else if (message is (int)PInvoke.WM_LBUTTONDOWN or (int)PInvoke.WM_MOUSEMOVE or (int)PInvoke.WM_LBUTTONUP)
         {
-            // PMv2 client coordinates are signed physical-pixel offsets, including while captured outside this monitor.
-            var point = new PointD(Display.Bounds.X + (short)((long)lParam & 0xffff),
-                Display.Bounds.Y + (short)(((long)lParam >> 16) & 0xffff));
+            // PMv2 GetCursorPos remains physical across monitors while mouse capture is held.
+            if (!PInvoke.GetCursorPos(out var cursor)) return 0;
+            var point = new PointD(cursor.X, cursor.Y);
             if (message == PInvoke.WM_LBUTTONDOWN)
             {
                 capturing = true;
@@ -113,15 +119,19 @@ internal sealed class SelectionOverlayWindow : Window
                 controller.MouseUp(point);
             }
             else if (((long)wParam & 1) != 0) controller.MouseDragged(point); // MK_LBUTTON
+            else controller.MouseMoved(point);
             handled = true;
         }
         return 0;
     }
     private void KeyPressed(object sender, KeyEventArgs args)
     {
-        if (args.Key != Key.Escape) return;
-        args.Handled = true;
-        controller.Cancel();
+        if (args.Key == Key.Escape) { args.Handled = true; controller.Cancel(); }
+        else if (args.Key == Key.Space)
+        {
+            args.Handled = true;
+            if (!args.IsRepeat) controller.ToggleMode();
+        }
     }
     private void WindowClosing(object? sender, CancelEventArgs args)
     {
@@ -140,6 +150,17 @@ internal sealed class SelectionOverlayWindow : Window
     private sealed class OverlaySurface : FrameworkElement
     {
         private OverlayFrame frame = OverlayFrame.Empty;
+        private bool windowMode;
+        private RectD? highlight;
+        private Brush accent = Brushes.DodgerBlue, accentFill = Brushes.Transparent;
+        public void SetWindowMode(bool enabled, RectD? rect, Color color)
+        {
+            if (windowMode == enabled && highlight == rect && accent is SolidColorBrush brush && brush.Color == color) return;
+            windowMode = enabled; highlight = rect;
+            accent = new SolidColorBrush(color);
+            accentFill = new SolidColorBrush(Color.FromArgb(64, color.R, color.G, color.B));
+            InvalidateVisual();
+        }
         private static readonly Brush Dim = new SolidColorBrush(Color.FromArgb(0x59, 0, 0, 0));
         private static readonly Brush Hole = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0));
         private static readonly Brush Label = new SolidColorBrush(Color.FromArgb(0xbf, 0, 0, 0));
@@ -154,6 +175,17 @@ internal sealed class SelectionOverlayWindow : Window
         }
         protected override void OnRender(DrawingContext dc)
         {
+            if (windowMode)
+            {
+                dc.DrawRectangle(Hole, null, new Rect(RenderSize));
+                if (highlight is { } h)
+                {
+                    dc.DrawRectangle(accentFill, null, new Rect(h.X, h.Y, h.Width, h.Height));
+                    if (h.Width >= 2 && h.Height >= 2)
+                        dc.DrawRectangle(null, new Pen(accent, 2), new Rect(h.X + 1, h.Y + 1, h.Width - 2, h.Height - 2));
+                }
+                return;
+            }
             var bounds = new RectangleGeometry(new Rect(RenderSize));
             if (frame.SelectionDips is not { } r) { dc.DrawGeometry(Dim, null, bounds); return; }
             var selection = new Rect(r.X, r.Y, r.Width, r.Height);

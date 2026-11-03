@@ -58,3 +58,11 @@ DXGI_ERROR_DEVICE_RESET
 CreateDirect3D11DeviceFromDXGIDevice
 IDirect3DDxgiInterfaceAccess
 IGraphicsCaptureItemInterop
+
+EnumWindows
+IsIconic
+GetWindowText
+GetWindowTextLength
+GetWindowLong
+DwmGetWindowAttribute
+DWMWINDOWATTRIBUTE

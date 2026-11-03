@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Windows.Input;
+using System.Windows.Media;
+using Windows.UI.ViewManagement;
 using System.Windows.Threading;
 using Snapper.Core.App;
 using Snapper.Core.Capture;
@@ -20,6 +22,10 @@ internal sealed class SelectionOverlayController(DisplayChangeWatcher watcher)
     private CapturePurpose purpose;
     private TaskCompletionSource<SelectionResult?>? completion;
     private bool isDismissing;
+    private Guid? sessionToken;
+    private WindowHitTester? hitTester;
+    private WindowCandidate? hoveredWindow;
+    private Color accent;
 
     public Task<SelectionResult?> SelectRegionAsync(CapturePurpose purpose)
     {
@@ -33,6 +39,11 @@ internal sealed class SelectionOverlayController(DisplayChangeWatcher watcher)
         var pending = new TaskCompletionSource<SelectionResult?>(TaskCreationOptions.RunContinuationsAsynchronously);
         completion = pending;
         this.purpose = purpose;
+        session = new();
+        hitTester = null; hoveredWindow = null;
+        var token = Guid.NewGuid();
+        sessionToken = token;
+        accent = ReadAccent();
         foreground.Remember();
         try
         {
@@ -55,6 +66,18 @@ internal sealed class SelectionOverlayController(DisplayChangeWatcher watcher)
             Keyboard.Focus(target);
             if (PInvoke.GetForegroundWindow() != target.Handle) Debug.WriteLine("Snapper: Overlay activation was refused.");
             watcher.Changed += DisplaysChanged;
+            dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+            {
+                if (sessionToken != token || isDismissing) return;
+                try
+                {
+                    var candidates = WindowCandidateProvider.Snapshot();
+                    if (sessionToken != token || isDismissing) return;
+                    hitTester = new(candidates, (uint)Environment.ProcessId, CaptureExclusion.RegisteredHandles);
+                    if (PInvoke.GetCursorPos(out var at)) MouseMoved(new(at.X, at.Y));
+                }
+                catch (Exception error) { Debug.WriteLine($"Snapper: Window snapshot unavailable: {error.Message}"); }
+            }));
         }
         catch
         {
@@ -73,7 +96,8 @@ internal sealed class SelectionOverlayController(DisplayChangeWatcher watcher)
     {
         if (completion is null || isDismissing) return;
         session.MouseDragged(point);
-        Render();
+        if (session.Mode == SelectionMode.Window) MouseMoved(point);
+        else Render();
     }
     public void MouseUp(PointD point)
     {
@@ -81,6 +105,9 @@ internal sealed class SelectionOverlayController(DisplayChangeWatcher watcher)
         switch (session.MouseUp(point))
         {
             case SelectionSessionOutcome.Rectangle(var result): _ = FinishAsync(result); break;
+            case SelectionSessionOutcome.WindowClick(var at):
+                if (WindowSelection.Resolve(hitTester, at, displays) is { } window) _ = FinishAsync(window);
+                break;
             case SelectionSessionOutcome.None: Render(); break;
             default: throw new UnreachableException();
         }
@@ -91,10 +118,40 @@ internal sealed class SelectionOverlayController(DisplayChangeWatcher watcher)
         session.Reset();
         Render();
     }
+    public void ToggleMode()
+    {
+        if (completion is null || isDismissing) return;
+        session.ToggleMode();
+        hoveredWindow = null;
+        if (PInvoke.GetCursorPos(out var at)) MouseMoved(new(at.X, at.Y));
+        Render();
+    }
+    public void MouseMoved(PointD point)
+    {
+        if (completion is null || isDismissing || session.Mode != SelectionMode.Window) return;
+        var candidate = hitTester?.WindowAt(new((int)point.X, (int)point.Y));
+        if (hoveredWindow?.Handle == candidate?.Handle) return;
+        hoveredWindow = candidate;
+        Render();
+    }
+    private static Color ReadAccent()
+    {
+        try
+        {
+            var c = new UISettings().GetColorValue(UIColorType.Accent);
+            return Color.FromRgb(c.R, c.G, c.B);
+        }
+        catch { return Color.FromRgb(0, 120, 212); }
+    }
     private void Render()
     {
         var tracker = session.Tracker;
-        foreach (var window in windows) window.SetFrame(SelectionOverlayRenderState.For(window.Display, tracker, window.MeasureLabel));
+        foreach (var window in windows)
+        {
+            window.SetMode(session.Mode, hoveredWindow?.Frame, accent);
+            if (session.Mode == SelectionMode.Rectangle)
+                window.SetFrame(SelectionOverlayRenderState.For(window.Display, tracker, window.MeasureLabel));
+        }
     }
     private void DisplaysChanged(object? sender, DisplayConfigurationChangedEventArgs args)
     {
@@ -117,7 +174,8 @@ internal sealed class SelectionOverlayController(DisplayChangeWatcher watcher)
     }
     private void Close(SelectionOutcome outcome)
     {
-        session.Reset();
+        session = new();
+        sessionToken = null; hitTester = null; hoveredWindow = null;
         watcher.Changed -= DisplaysChanged;
         foreach (var window in windows)
         {
