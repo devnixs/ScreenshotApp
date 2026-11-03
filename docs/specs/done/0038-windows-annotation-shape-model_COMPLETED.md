@@ -275,23 +275,23 @@ value equality, so 0039's undo can store snapshots.
 
 ## Acceptance criteria
 
-- [ ] `windows/src/Snapper.Core/Annotate/Model/` contains `ShapeGeometry`, `ArrowGeometry`, `ShapeHandle`,
+- [x] `windows/src/Snapper.Core/Annotate/Model/` contains `ShapeGeometry`, `ArrowGeometry`, `ShapeHandle`,
       `TextBox`, `AnnotationShape`/`ShapeKind`, `ITextMeasurer`, `TextMetrics`, `ContrastingOutline`, and
       `ShapeDragSession`/`ShapeDragKind`, none of which reference WPF, WinForms, WinRT, `System.Drawing`, or interop.
-- [ ] All geometry is stored in image pixels (top-left origin, y down); stroke and text sizes are
+- [x] All geometry is stored in image pixels (top-left origin, y down); stroke and text sizes are
       `StrokeWidth × pixelsPerDip`, so S/M/L = 2/4/8 image DIPs and text 16/24/36 image DIPs hold at 100%, 150%, and 200%.
-- [ ] Arrowhead length = 3 × stroke + 8 image DIPs, width 80% of it, clamped to the arrow length for short arrows.
-- [ ] Rectangles hit only within `stroke/2 + slop` of their outline; their interior is not a hit.
-- [ ] Shift-constrained rectangle creation and resize give a square in every quadrant; Shift-constrained
+- [x] Arrowhead length = 3 × stroke + 8 image DIPs, width 80% of it, clamped to the arrow length for short arrows.
+- [x] Rectangles hit only within `stroke/2 + slop` of their outline; their interior is not a hit.
+- [x] Shift-constrained rectangle creation and resize give a square in every quadrant; Shift-constrained
       arrow creation and endpoint drags snap to 45° multiples and preserve length.
-- [ ] Rectangles expose 4 corner handles, arrows 2 endpoint handles, text none; a rectangle resized past its
+- [x] Rectangles expose 4 corner handles, arrows 2 endpoint handles, text none; a rectangle resized past its
       opposite corner flips and returns the new handle identity, keeping the anchor fixed for the rest of the gesture.
-- [ ] Rectangle/arrow creation below the caller's minimum drag returns null.
-- [ ] Drag-session previews clamp the pointer to the image bounds, never accumulate, and a click without movement yields no edit.
-- [ ] The outline color is black for light colors (luminance ≥ 0.5) and white otherwise, with the text's alpha.
-- [ ] A stroke-width change on a text shape through `ITextMeasurer` updates `MeasuredSize`; the model never measures text itself.
-- [ ] Every operation preserves the shape's `Id`.
-- [ ] `dotnet build windows/Snapper.slnx -c Debug` and `dotnet test windows/Snapper.slnx` pass (on macOS and Windows).
+- [x] Rectangle/arrow creation below the caller's minimum drag returns null.
+- [x] Drag-session previews clamp the pointer to the image bounds, never accumulate, and a click without movement yields no edit.
+- [x] The outline color is black for light colors (luminance ≥ 0.5) and white otherwise, with the text's alpha.
+- [x] A stroke-width change on a text shape through `ITextMeasurer` updates `MeasuredSize`; the model never measures text itself.
+- [x] Every operation preserves the shape's `Id`.
+- [x] `dotnet build windows/Snapper.slnx -c Debug` and `dotnet test windows/Snapper.slnx` pass (on macOS and Windows).
 
 ## Edge cases
 
@@ -449,3 +449,23 @@ value equality, so 0039's undo can store snapshots.
   `TextInteractionDecision`, and outline rendering: **0042**.
 - Full-resolution export: **0043**.
 - Other shape types (blur, highlighter, crop, numbered steps): PRD §2 non-goals.
+
+## Verification status
+
+Automated verification on **2026-11-03** (macOS, .NET 10):
+
+- `dotnet build windows/Snapper.slnx -c Debug`: **Build succeeded, 0 warnings, 0 errors**.
+- `dotnet test windows/Snapper.slnx`: **975 passed, 0 failed, 0 skipped**, including **63 new cases**
+  for shape geometry, scale-dependent sizes and hits, normalization on construction and `with`
+  expressions, resize flips and stable identity, drag previews, contrasting outlines, text metrics,
+  and injected text measurement. Every referenced Swift model test is ported, with 150% scale cases.
+- The existing Core assembly test confirms no WPF, WinForms, WinRT, System.Drawing, or interop
+  references. Only Core model and test files changed; no Windows UI or macOS source changes.
+- Existing `StrokeWidth.Points()` / `TextPointSize()` and `RgbaColor` presets already provide the
+  prerequisite members, so their existing types/tests are reused. As recorded in 0027, color
+  components are named `R/G/B` to coexist with the static `Red/Green/Blue` presets.
+- No PRD or AGENTS.md changes were needed: this slice implements already approved behavior.
+
+Manual verification: **N/A for this pure model slice**. Nothing is wired into the running app, and
+no GUI path was manually verified. Drawing, Shift constraints, hit targets, handles, and outlined
+text remain manual checks for 0040–0042 when those features are integrated.
