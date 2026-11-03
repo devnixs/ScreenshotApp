@@ -266,3 +266,35 @@ As a Snapper user on Windows annotating a capture, I press T, click the image, t
 - Copy & Close and Ctrl+Enter's behavior: **0044**. This spec only routes Ctrl+Enter to the window while editing.
 - Selection, move, resize, delete, swatches, `ChooseColor`, the S/M/L UI, remembered color and width, document undo wiring, and Esc-deselect: **0041**. The canvas, transform, window sizing, tool switching, and rectangle/arrow rendering: **0040**. The `TextBox` shape kind and its hit-testing: **0038**. Undo history and dirty tracking: **0039**.
 - Text resize handles, rotation, alignment, font choice, backgrounds, and auto-wrap: not in v1 (PRD §2, §8.2).
+
+## Verification status
+
+Automated verification on 2026-11-03:
+
+- `dotnet build windows/Snapper.slnx -c Debug`: **passed**, 0 warnings and 0 errors.
+- `dotnet test windows/Snapper.slnx`: **passed**, **1,175 tests**, 0 failures, 0 skips (56 new text-policy, commit/undo, re-entry, newline, caret, and layout cases).
+- `git diff --check`: passed.
+
+The implementation adds the Core text decisions and an image-space WPF editor over the shared outlined-text renderer. The draft stays outside the document until one atomic commit, selected text is remeasured on restroke, and window routing keeps text undo separate from document undo. Text tool and T-key entry are enabled. PRD §13.7 already specifies the Windows Tab behavior, so no PRD or AGENTS.md change was needed.
+
+WPF text measurement, caret alignment, glyph rendering, IME/focus, and all GUI behavior remain **unverified**. Run these checks on Windows 11; every item is pending:
+
+- [ ] not yet run by user: Capture dark and light content with Ctrl+Shift+6; confirm the editor opens focused.
+- [ ] not yet run by user: Press T, click dark content, and type Hello; confirm a vertically centered caret and bold red Segoe UI at size M.
+- [ ] not yet run by user: Enter World on the next line, then Esc; confirm no wrapping, growth to two lines, no size/position jump, white outline, no background, and the Text tool staying active.
+- [ ] not yet run by user: Add Note on light content and click elsewhere; confirm the click commits without creating another box.
+- [ ] not yet run by user: Commit an empty draft, then undo; confirm no empty-shape undo step was created.
+- [ ] not yet run by user: Check yellow/white text with black outlines and black text with a white outline.
+- [ ] not yet run by user: Select-tool double-click text at a character, edit, commit, and undo/redo with Ctrl+Z, Ctrl+Y, and Ctrl+Shift+Z; confirm one document step per session.
+- [ ] not yet run by user: Text-tool single-click existing text; confirm re-entry at the clicked character instead of a new box.
+- [ ] not yet run by user: Edit existing text to empty, commit, then undo; confirm removal and restoration with its original text.
+- [ ] not yet run by user: While editing, pick blue and L; confirm the caret stays aligned and one document undo restores the whole session.
+- [ ] not yet run by user: Select committed text and choose S; confirm remeasurement at the same top-left, then undo.
+- [ ] not yet run by user: While editing, use V/R/A/T, Backspace, Delete, and text undo until its stack is empty; confirm tools/shapes/document undo remain unaffected.
+- [ ] not yet run by user: Copy selected text into Notepad and paste browser content into the editor; confirm text clipboard behavior, plain text, and caret alignment, including pasted tabs.
+- [ ] not yet run by user: Use and cancel the custom color dialog while editing; confirm live draft style changes and restored editor focus.
+- [ ] not yet run by user: Resize and move the window across mixed-DPI monitors while editing; confirm glyph, caret, and selection alignment before and after commit.
+- [ ] not yet run by user: Place long text near the bottom-right image edge; confirm origin clamping and image-edge clipping.
+- [ ] not yet run by user: Tab and Shift+Tab do nothing; Alt+Tab away and back retains the editing session and caret. Also commit an active IME composition and confirm its text is retained.
+- [ ] not yet run by user: Close while editing with Ctrl+W, Alt+F4, and the X button; confirm text commits first (0043 adds the unsaved prompt).
+- [ ] not yet run by user: Capture at 150% and compare S/M/L text with 16/24/36-DIP labels; after 0043, verify the saved full-resolution outlined text too. Repeat editor behavior in two independent annotation windows.

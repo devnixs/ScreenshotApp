@@ -29,13 +29,14 @@ internal sealed partial class AnnotationWindow : Window
     private AnnotationTool currentTool = AnnotationTools.DefaultTool;
     public AnnotationCanvas Canvas { get; }
     public AnnotationDocument Document => Canvas.Document;
+    public TextEditingController TextEditing { get; }
     public DateTime CaptureDate { get; }
     public bool HasOpenDialog { get; private set; }
     public nint Handle => handle;
     public AnnotationTool CurrentTool
     {
         get => currentTool;
-        set { currentTool = value; Canvas.CurrentTool = value; if (tools.TryGetValue(value, out var button)) button.IsChecked = true; }
+        set { TextEditing.Commit(); currentTool = value; Canvas.CurrentTool = value; if (tools.TryGetValue(value, out var button)) button.IsChecked = true; }
     }
     public AnnotationWindow(AnnotationDocument document, BitmapSource image, AppSettings settings, DateTime captureDate)
     {
@@ -44,11 +45,15 @@ internal sealed partial class AnnotationWindow : Window
         Title = new FileNamer().BaseName(CaptureKind.Screenshot, new DateTimeOffset(captureDate));
         Canvas = new(document, image);
         CanvasHost.Children.Add(Canvas);
+        var editorLayer = new System.Windows.Controls.Canvas { Background = null };
+        CanvasHost.Children.Add(editorLayer);
+        TextEditing = new(Canvas, editorLayer); Canvas.TextEditing = TextEditing;
+        TextEditing.Changed += RefreshStyle;
         styleState = new(new(settings.AnnotationColor, settings.AnnotationStrokeWidth));
         BuildToolbar(); RefreshStyle(); CurrentTool = AnnotationTools.DefaultTool;
         Document.Changed += DocumentChanged;
         PreviewKeyDown += KeyDownPreview; PreviewKeyUp += KeyUpPreview;
-        Deactivated += WindowDeactivated; Closed += WindowClosed;
+        Deactivated += WindowDeactivated; Activated += WindowActivated; Closing += WindowClosing; Closed += WindowClosed;
     }
     private void BuildToolbar()
     {
@@ -56,7 +61,7 @@ internal sealed partial class AnnotationWindow : Window
         {
             var button = new RadioButton { GroupName = "AnnotationTools", Style = (Style)FindResource("ToolButton"),
                 Content = Glyph(descriptor.Glyph, descriptor.GlyphRotation), ToolTip = descriptor.ToolTip,
-                IsEnabled = descriptor.Tool != AnnotationTool.Text, Focusable = false, IsTabStop = false };
+                IsEnabled = true, Focusable = false, IsTabStop = false };
             AutomationProperties.SetName(button, descriptor.Label);
             button.Click += (_, _) => { CurrentTool = descriptor.Tool; FocusCanvas(); };
             tools.Add(descriptor.Tool, button); ToolsPanel.Children.Add(button);
@@ -96,7 +101,12 @@ internal sealed partial class AnnotationWindow : Window
     {
         if (Canvas.IsDragging) { RefreshStyle(); return; }
         var effects = styleState.Reduce(e);
-        Canvas.Editor.ApplyStyle(effects, (shape, width) => shape.WithStrokeWidth(width));
+        if (TextEditing.IsEditing)
+        {
+            if (effects.PersistColor is { } draftColor) TextEditing.ApplyColor(draftColor);
+            if (effects.PersistStrokeWidth is { } draftWidth) TextEditing.ApplyStrokeWidth(draftWidth);
+        }
+        else Canvas.Editor.ApplyStyle(effects, (shape, width) => shape.WithStrokeWidth(width, Document.PixelsPerDip, TextEditing.Measurer));
         if (effects.PersistColor is { } color) settings.AnnotationColor = color;
         if (effects.PersistStrokeWidth is { } width) settings.AnnotationStrokeWidth = width;
         RefreshStyle(); FocusCanvas();
@@ -104,7 +114,7 @@ internal sealed partial class AnnotationWindow : Window
     private void DocumentChanged(object? sender, EventArgs args) => RefreshStyle();
     private void RefreshStyle()
     {
-        styleState.Reduce(new ToolbarStyleEvent.SelectedShapeStyleChanged(Document.SelectedShape?.Style()));
+        styleState.Reduce(new ToolbarStyleEvent.SelectedShapeStyleChanged(TextEditing.Style ?? Document.SelectedShape?.Style()));
         Canvas.CurrentColor = styleState.CurrentStyle.Color; Canvas.CurrentStrokeWidth = styleState.CurrentStyle.StrokeWidth;
         var selected = styleState.SwatchSelection is SwatchSelection.Preset(var index) ? index : 8;
         for (var i = 0; i < swatches.Count; i++) swatches[i].BorderBrush = i == selected ? SystemColors.HighlightBrush : Brushes.Transparent;
@@ -119,9 +129,26 @@ internal sealed partial class AnnotationWindow : Window
     }
     private void KeyDownPreview(object sender, KeyEventArgs e)
     {
-        if (Keyboard.FocusedElement is TextBoxBase) return; // 0042 supplies text editing routing.
         var key = e.Key == Key.System ? e.SystemKey : e.Key;
         var modifiers = Keyboard.Modifiers;
+        if (TextEditing.IsEditing)
+        {
+            var textKey = key switch { Key.Escape => TextEditingKey.Escape, Key.Enter => TextEditingKey.Enter,
+                Key.Tab => TextEditingKey.Tab, Key.S => TextEditingKey.S, Key.W => TextEditingKey.W,
+                Key.F4 => TextEditingKey.F4, _ => TextEditingKey.Other };
+            var route = TextEditingKeyPolicy.Route(true, textKey, modifiers.HasFlag(ModifierKeys.Control), modifiers.HasFlag(ModifierKeys.Shift), modifiers.HasFlag(ModifierKeys.Alt));
+            if (route == TextEditingKeyRoute.Commit) { TextEditing.Commit(); e.Handled = true; }
+            else if (route == TextEditingKeyRoute.Ignore) e.Handled = true;
+            else if (route == TextEditingKeyRoute.Window)
+            {
+                if (key is Key.W or Key.F4) Close();
+                else if (key == Key.S) TextEditing.Commit(); // 0043 adds saving after committing.
+                // 0044 adds Copy & Close for Ctrl+Enter; consume it without inserting a newline.
+                e.Handled = true;
+            }
+            return; // Editor keys never fall through to document undo, even with an empty native undo stack.
+        }
+        if (Keyboard.FocusedElement is TextBoxBase) return;
         var coreModifiers = KeyModifiers.None;
         if (modifiers.HasFlag(ModifierKeys.Control)) coreModifiers |= KeyModifiers.Ctrl;
         if (modifiers.HasFlag(ModifierKeys.Alt)) coreModifiers |= KeyModifiers.Alt;
@@ -132,18 +159,23 @@ internal sealed partial class AnnotationWindow : Window
         if (key == Key.W && modifiers == ModifierKeys.Control) { Close(); e.Handled = true; return; }
         if (key is Key.LeftShift or Key.RightShift && Canvas.IsDragging) { Canvas.RefreshPreview(); return; }
         var letter = key switch { Key.V => "v", Key.R => "r", Key.A => "a", Key.T => "t", _ => "" };
-        if (AnnotationTools.ForShortcut(letter, (modifiers & (ModifierKeys.Control | ModifierKeys.Alt | ModifierKeys.Windows)) != 0, false) is { } tool)
+        if (AnnotationTools.ForShortcut(letter, (modifiers & (ModifierKeys.Control | ModifierKeys.Alt | ModifierKeys.Windows)) != 0, true) is { } tool)
         { CurrentTool = tool; e.Handled = true; }
     }
     private void KeyUpPreview(object sender, KeyEventArgs e)
     { if (e.Key is Key.LeftShift or Key.RightShift && Canvas.IsDragging) Canvas.RefreshPreview(); }
-    public void FocusCanvas() { Canvas.Focus(); Keyboard.Focus(Canvas); }
+    public void FocusCanvas()
+    { if (TextEditing.IsEditing) TextEditing.RestoreFocus(); else { Canvas.Focus(); Keyboard.Focus(Canvas); } }
+    private void WindowActivated(object? sender, EventArgs args)
+    { if (TextEditing.IsEditing) Dispatcher.BeginInvoke(new Action(() => { if (IsActive) TextEditing.RestoreFocus(); })); }
+    private void WindowClosing(object? sender, System.ComponentModel.CancelEventArgs args) => TextEditing.Commit();
     private void WindowDeactivated(object? sender, EventArgs args) => Canvas.AbortDrag();
     private void WindowClosed(object? sender, EventArgs args)
     {
         CaptureExclusion.Unregister(new HWND(Handle));
-        PreviewKeyDown -= KeyDownPreview; PreviewKeyUp -= KeyUpPreview; Deactivated -= WindowDeactivated; Closed -= WindowClosed;
+        PreviewKeyDown -= KeyDownPreview; PreviewKeyUp -= KeyUpPreview; Deactivated -= WindowDeactivated; Activated -= WindowActivated; Closing -= WindowClosing; Closed -= WindowClosed;
         Document.Changed -= DocumentChanged;
+        TextEditing.Changed -= RefreshStyle; TextEditing.Dispose();
         Canvas.Dispose(); CanvasHost.Children.Clear(); Content = null;
     }
     public unsafe void Place(DisplayInfo display, IReadOnlyCollection<PixelPoint> existingOrigins)

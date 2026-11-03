@@ -14,6 +14,17 @@ internal static class ShapeRenderer
     { foreach (var shape in shapes) Draw(dc, shape, pixelsPerDip); }
     public static void Draw(DrawingContext dc, AnnotationShape shape, double pixelsPerDip)
     {
+        if (shape.Kind is ShapeKind.Text(var box))
+        {
+            var size = TextMetrics.FontPixelSize(shape.StrokeWidth, pixelsPerDip);
+            var text = TextStyle.CreateFormattedText(box.Text, size, Brush(shape.Color));
+            var glyphs = text.BuildGeometry(Point(box.Origin)); glyphs.Freeze();
+            var outline = new Pen(Brush(ContrastingOutline.ColorFor(shape.Color)), 2 * ContrastingOutline.OutlineFractionOfFontSize * size) { LineJoin = PenLineJoin.Round };
+            outline.Freeze();
+            dc.DrawGeometry(null, outline, glyphs);
+            dc.DrawGeometry(Brush(shape.Color), null, glyphs);
+            return;
+        }
         foreach (var primitive in ShapeDrawingPlan.For(shape, pixelsPerDip))
         {
             switch (primitive)

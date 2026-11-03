@@ -15,6 +15,7 @@ internal sealed class AnnotationCanvas : FrameworkElement, IDisposable
     private AnnotationTool currentTool = AnnotationTools.DefaultTool;
     public AnnotationDocument Document { get; }
     public SelectionEditor Editor { get; }
+    public TextEditingController? TextEditing { get; set; }
     public BitmapSource Image => image ?? throw new ObjectDisposedException(nameof(AnnotationCanvas));
     public AnnotationTool CurrentTool
     {
@@ -41,6 +42,7 @@ internal sealed class AnnotationCanvas : FrameworkElement, IDisposable
     private void RefreshScaling()
     {
         RenderOptions.SetBitmapScalingMode(this, Transform.IsPixelExact ? BitmapScalingMode.NearestNeighbor : BitmapScalingMode.HighQuality);
+        TextEditing?.Layout(Transform);
         InvalidateVisual();
     }
     protected override void OnDpiChanged(DpiScale oldDpi, DpiScale newDpi) { base.OnDpiChanged(oldDpi, newDpi); AbortDrag(); RefreshScaling(); }
@@ -53,14 +55,20 @@ internal sealed class AnnotationCanvas : FrameworkElement, IDisposable
         dc.PushTransform(new MatrixTransform(t.Scale, 0, 0, t.Scale, t.ImageRectInView.X, t.ImageRectInView.Y));
         dc.PushClip(new RectangleGeometry(new Rect(0, 0, Document.ImagePixelSize.Width, Document.ImagePixelSize.Height)));
         ShapeRenderer.DrawImage(dc, image);
-        ShapeRenderer.Draw(dc, Document.Shapes.Select(shape => Editor.DragPreview is { } drag && drag.Id == shape.Id ? drag : shape), Document.PixelsPerDip);
+        foreach (var shape in Document.Shapes)
+        {
+            var rendered = TextEditing?.EditingShapeId == shape.Id ? TextEditing.DraftShape :
+                Editor.DragPreview is { } drag && drag.Id == shape.Id ? drag : shape;
+            if (rendered is not null) ShapeRenderer.Draw(dc, rendered, Document.PixelsPerDip);
+        }
+        if (TextEditing is { IsEditing: true, EditingShapeId: null, DraftShape: { } draft }) ShapeRenderer.Draw(dc, draft, Document.PixelsPerDip);
         if (preview is not null) ShapeRenderer.Draw(dc, preview, Document.PixelsPerDip);
         dc.Pop(); dc.Pop();
         DrawSelection(dc, t);
     }
     private void DrawSelection(DrawingContext dc, CanvasTransform transform)
     {
-        if (CurrentTool != AnnotationTool.Select || Document.SelectedShape is not { } selected) return;
+        if (TextEditing?.IsEditing == true || CurrentTool != AnnotationTool.Select || Document.SelectedShape is not { } selected) return;
         var shape = Editor.DragPreview ?? selected;
         var accent = SystemParameters.WindowGlassBrush ?? SystemColors.HighlightBrush;
         var pen = new Pen(accent, 1);
@@ -87,7 +95,16 @@ internal sealed class AnnotationCanvas : FrameworkElement, IDisposable
     private PointD Position(MouseEventArgs e) { var p = e.GetPosition(this); return new(p.X, p.Y); }
     protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
     {
-        base.OnMouseLeftButtonDown(e); Focus(); AbortDrag();
+        base.OnMouseLeftButtonDown(e);
+        var imagePoint = Transform.IsInsideImage(Position(e)) ? Transform.ImagePoint(Position(e)) : null;
+        var text = TextInteractionDecision.Decide(TextEditing?.IsEditing == true, CurrentTool, e.ClickCount, imagePoint, Document);
+        switch (text)
+        {
+            case TextInteractionDecision.Commit: TextEditing?.Commit(); e.Handled = true; return;
+            case TextInteractionDecision.BeginNew(var point): TextEditing?.BeginNew(point); e.Handled = true; return;
+            case TextInteractionDecision.Edit(var id) when imagePoint is { } caret: TextEditing?.BeginEditing(id, caret); e.Handled = true; return;
+        }
+        Focus(); AbortDrag();
         if (CurrentTool == AnnotationTool.Select)
         {
             if (Transform.ImagePoint(Position(e)) is { } point && Editor.PointerPressed(point, Transform) && !CaptureMouse()) Editor.AbortDrag();
@@ -157,6 +174,7 @@ internal sealed class AnnotationCanvas : FrameworkElement, IDisposable
     }
     public void Dispose()
     {
+        TextEditing = null;
         AbortDrag(); Document.Changed -= DocumentChanged; SizeChanged -= CanvasSizeChanged; image = null;
     }
 }

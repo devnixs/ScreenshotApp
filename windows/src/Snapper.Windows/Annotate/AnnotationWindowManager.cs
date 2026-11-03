@@ -39,5 +39,6 @@ internal sealed class AnnotationWindowManager(AppSettings settings)
     }
     private void WindowClosed(object? sender, EventArgs args)
     { if (sender is AnnotationWindow window) { window.Closed -= WindowClosed; windows.Remove(window); } }
+    public void CommitAllTextEdits() { foreach (var window in windows.ToArray()) window.TextEditing.Commit(); }
     public void CloseAll() { foreach (var window in windows.ToArray()) window.Close(); }
 }
