@@ -37,6 +37,17 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         }
     }
 
+    func setRecording(_ isRecording: Bool) {
+        statusItem.menu = nil
+        guard let button = statusItem.button else { return }
+        let image = NSImage(systemSymbolName: isRecording ? "record.circle" : "camera.viewfinder",
+                            accessibilityDescription: isRecording ? "Stop Recording" : "Snapper")
+        image?.isTemplate = !isRecording
+        button.image = image
+        button.contentTintColor = isRecording ? .systemRed : nil
+        button.toolTip = isRecording ? "Stop Recording" : "Snapper"
+    }
+
     func item(for entry: StatusMenuEntry) -> NSMenuItem? {
         menuItems.first { $0.entry == entry }?.item
     }

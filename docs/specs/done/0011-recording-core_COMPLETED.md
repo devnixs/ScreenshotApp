@@ -383,3 +383,35 @@ None. User confirmed on 2026-11-03: Quitting stops and saves an active recording
 - Microphone audio and the `recordMicrophone` setting: **0014**.
 - System audio, GIF, and highlighted clicks: PRD §2 non-goals.
 - Copying recordings to the clipboard (§7.5: never).
+
+## Verification status
+
+Automated verification on **2026-11-03**:
+
+- `xcodegen generate` succeeded.
+- `xcodebuild -scheme Snapper -configuration Debug build` succeeded (green).
+- `xcodebuild -scheme Snapper test` succeeded (green): **224 tests in 37 suites**.
+- New tests cover native/even-pixel geometry on primary, negative-origin, and Retina/non-Retina displays; lifecycle success, deferred stop/cancel, every failure/timeout/content outcome and terminal idempotence; startup callback ordering; and deferred termination. Existing AppModeMachine tests already cover recording routing and both status-item buttons.
+- A pure startup callback buffer preserves delegate events that arrive before `startCapture()` resumes. Spontaneous writer completion also stops the stream before releasing it. These handle callback ordering without touching UI from framework queues.
+- PRD §7 records even-pixel snapping without rescaling. AGENTS.md lists recording policies among pure, tested logic.
+- No live GUI/capture verification was run. The standard AppIntents metadata-extraction warning is emitted because the app does not depend on AppIntents; there are no Swift warnings.
+
+Manual verification (each item is **not yet run by user**; requires a GUI session with Screen Recording granted):
+
+- [ ] not yet run by user — ⌘⇧5 plus a Retina rectangle starts immediately with a red `record.circle`.
+- [ ] not yet run by user — ⌘⇧4, ⌘⇧6, and Esc do nothing during recording.
+- [ ] not yet run by user — ⌘⇧5 stops, names the file using the recording start time, reveals it selected in Finder, and leaves clipboard contents unchanged.
+- [ ] not yet run by user — QuickTime/ffprobe confirms H.264 MP4, native even pixel dimensions, up to 30 fps, visible cursor, correct selected content, and no Snapper windows.
+- [ ] not yet run by user — Both left- and right-clicking the status icon stop/save/reveal without opening the menu or Settings.
+- [ ] not yet run by user — After stopping, the camera icon and normal menu/Settings behavior return.
+- [ ] not yet run by user — An odd-sized selection on a 1× display produces even dimensions without scaling.
+- [ ] not yet run by user — Recordings started in the same second receive collision suffixes.
+- [ ] not yet run by user — Disconnecting the recorded secondary display stops/saves/reveals and restores the normal icon.
+- [ ] not yet run by user — An unwritable or uncreatable folder shows “Couldn't save to <folder>” and Choose Folder…, without starting capture; choosing a folder updates the setting for the next recording.
+- [ ] not yet run by user — A window selection records its current display-clamped frame as a fixed rectangle (interim until 0013).
+- [ ] not yet run by user — Missing/revoked permission at startup opens onboarding; other startup failures alert and restore idle.
+- [ ] not yet run by user — An induced writer failure always alerts, preserves/reveals a non-empty partial file, deletes an empty file, and restores idle.
+- [ ] not yet run by user — A very fast second record shortcut waits for startup, then stops/saves once.
+- [ ] not yet run by user — Quit during startup, recording, or finalization waits for Stop/save/reveal (or error handling), then exits.
+
+Changing the build signature can reset Screen Recording permission; check permission first if capture is blank or fails.

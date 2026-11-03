@@ -16,6 +16,8 @@ final class AppCoordinator: NSObject {
     private lazy var onboardingWindowController = OnboardingWindowController(settings: settings)
     private var statusItemController: StatusItemController?
     private var modeMachine = AppModeMachine()
+    private var recordingSession: RecordingSession?
+    private var termination = RecordingTerminationDecision()
 
     var mode: AppMode { modeMachine.mode }
 
@@ -47,7 +49,7 @@ final class AppCoordinator: NSObject {
         case .showOverlay(let purpose): beginSelection(for: purpose)
         case .completeSelection: break // The overlay result carries the region to the pipeline.
         case .stopRecording:
-            logger.info("Stop recording requested (not implemented until 0011)")
+            recordingSession?.stop()
         case .openMenu: statusItemController?.showMenu()
         case .openSettings: openSettings()
         }
@@ -64,7 +66,12 @@ final class AppCoordinator: NSObject {
                 send(.selectionCancelled)
                 return
             }
+            let startDate = Date()
             send(.selectionFinished)
+            if purpose == .record {
+                startRecording(result, startDate: startDate)
+                return
+            }
             switch result {
             case .rect(let display, let rect):
                 selectionLogger.info("Selection for \(purpose.rawValue, privacy: .public): display \(display.displayID), rect \(String(describing: rect), privacy: .public)")
@@ -83,11 +90,56 @@ final class AppCoordinator: NSObject {
                     selectionLogger.info("Annotate not implemented yet")
                 }
             }
-            if purpose == .record {
-                // TODO(0011): start RecordingSession here.
-                send(.recordingEnded)
-            }
         }
+    }
+
+    private func startRecording(_ selection: SelectionResult, startDate: Date) {
+        let display: DisplayInfo
+        let rect: CGRect
+        switch selection {
+        case .rect(let selectedDisplay, let selectedRect):
+            display = selectedDisplay
+            rect = selectedRect
+        case .window(_, let frame, let selectedDisplay):
+            // 0013: replace this fixed display rectangle with a following window filter.
+            display = selectedDisplay
+            guard let height = DisplayGeometry.primaryHeight(in: DisplayInfo.allCurrent()) else {
+                send(.recordingEnded)
+                ErrorAlerts.showError(title: "Couldn't record the screen", error: ScreenshotCaptureError.displayUnavailable)
+                return
+            }
+            rect = DisplayGeometry.appKitRect(fromCG: frame, primaryHeight: height)
+        }
+        do {
+            let folder = SaveFolder(url: settings.saveFolderURL)
+            _ = try folder.prepareForWriting()
+            let url = try folder.uniqueFileURL(for: .recording, date: startDate)
+            let session = RecordingSession(
+                configuration: RecordingConfigurationBuilder.build(display: display, selection: rect), outputURL: url,
+                showOnboarding: { [weak self] in self?.showOnboarding() },
+                onEnded: { [weak self] in self?.recordingEnded() })
+            recordingSession = session
+            statusItemController?.setRecording(true)
+            session.start()
+        } catch {
+            send(.recordingEnded)
+            _ = ErrorAlerts.showSaveFolderFailure(folder: settings.saveFolderURL, error: error, settings: settings)
+        }
+    }
+
+    private func recordingEnded() {
+        recordingSession = nil
+        send(.recordingEnded)
+        statusItemController?.setRecording(false)
+        if termination.recordingEnded() { NSApp.reply(toApplicationShouldTerminate: true) }
+    }
+
+    func applicationShouldTerminate() -> NSApplication.TerminateReply {
+        if termination.request(recordingActive: recordingSession != nil) {
+            recordingSession?.stop()
+            return .terminateLater
+        }
+        return .terminateNow
     }
 
     private func takeScreenshot(capture: @MainActor () async throws -> CapturedImage) async {
