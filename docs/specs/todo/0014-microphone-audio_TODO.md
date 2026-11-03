@@ -102,7 +102,7 @@ As a Snapper user who turned on *Record microphone* in Settings, I get my voice 
 
 ## Open questions
 
-1. **Setting on but microphone not authorized, or no input device, at recording start.** The PRD (§7.2, §10, §11) doesn't say what a recording does when *Record microphone* is on but permission was later revoked or reset, or when the Mac has no audio input. **Recommendation (as specified above): record video only, with no prompt and no alert.** PRD §11 forbids prompting outside the toggle, and an alert after every recording would be noisy. The Settings toggle (0010) is the place to surface the problem. If accepted, add one sentence to PRD §7.2 ("If microphone permission is missing or no input device exists, the recording is saved without audio and no alert is shown."). The spec already implements this recommendation. If the user prefers an alert, add a pure "should notify" flag to `MicrophoneCapturePolicy` and a one-time non-blocking alert after saving.
+None. User confirmed on 2026-11-03: When the setting is on but microphone permission or an input device is missing at recording start, record video only without a prompt or alert. Recorded in docs/PRD.md.
 
 ## Out of scope
 

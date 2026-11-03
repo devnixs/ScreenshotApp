@@ -348,19 +348,7 @@ per my setting), with no trace of Snapper's overlay in the image.
 
 ## Open questions
 
-1. **Cursor in screenshots.** PRD §6 doesn't say; §7 says recordings show the cursor. This spec
-   uses `showsCursor = false`, matching macOS's own ⌘⇧4. Recommended: confirm "no cursor in
-   screenshots" and add it to PRD §6.2.
-2. **What happens to the pending screenshot after Choose Folder….** PRD §9 says the alert offers
-   Choose Folder… but not whether the current image is then saved. This spec retries the save once
-   into the chosen folder, so the screenshot isn't lost (important with *Save to file* only).
-   Recommended: confirm and add to PRD §9 ("…after choosing a folder, the screenshot is saved
-   there").
-3. **Alert wording/buttons.** PRD fixes the title "Couldn't save to <folder>" and the Choose
-   Folder… button only. This spec uses a tilde-abbreviated path for <folder>, a **Cancel** second
-   button, the system error text as informative text, and "Couldn't take screenshot" as the generic
-   capture-failure title. Recommended: accept as-is (no PRD change needed beyond noting the path
-   format if desired).
+None. User confirmed on 2026-11-03: Screenshots exclude the cursor. Choosing a folder updates the setting and retries the pending screenshot save once. Save alerts use a tilde-abbreviated path, Cancel, and system error details; generic capture failures use “Couldn't take screenshot”. Recorded in docs/PRD.md.
 
 ## Out of scope
 

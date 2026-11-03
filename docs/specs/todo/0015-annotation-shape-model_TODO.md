@@ -294,21 +294,7 @@ drawing calls.** All files live in `Snapper/Annotate/Model/`. All types are `Equ
 
 ## Open questions
 
-1. **Minimum drag to create a shape (PRD gap).** §5's "4 × 4 points counts as a click" covers the
-   selection overlay only; §8.2 doesn't say what a click or tiny drag does with the Rectangle or
-   Arrow tool. Recommended: a drag smaller than **3 view points** (rectangle: width *or* height
-   below it; arrow: length below it) creates nothing, so a click without a drag never leaves an
-   invisible shape. The threshold is in view points (converted at the current zoom) so it feels
-   the same at any zoom. If confirmed, add a line to `docs/PRD.md §8.2`.
-2. **Clicking inside a rectangle's empty interior (PRD gap).** §8.2 says "click a shape to select
-   it" but doesn't say whether the interior of an outline-only rectangle counts. Recommended:
-   **outline only** (within half the stroke + 4 view points), so you can click through a rectangle to
-   select or draw over what's inside it, the way Preview's outline shapes behave. If confirmed,
-   add a line to `docs/PRD.md §8.2`.
-3. **Arrowhead proportions (detail, low risk).** The PRD only says the arrowhead "scales with the
-   stroke width". This spec fixes `headLength = 3·stroke + 8 pt`, `headWidth = 0.8·headLength`
-   (S 14 × 11.2 pt, M 20 × 16 pt, L 32 × 25.6 pt). Confirm, or tweak the constants — they live in
-   one place (`ArrowGeometry`).
+None. User confirmed on 2026-11-03: Reject rectangle drags when either dimension is below 3 view points, and arrow drags shorter than 3 view points, at any zoom. Rectangle hit-testing uses only the outline within half the stroke plus 4 view points. Arrowhead length is 3 × stroke + 8 image points, width 80% of length, clamped for short arrows as specified. Recorded in docs/PRD.md.
 
 ## Out of scope
 

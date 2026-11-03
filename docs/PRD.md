@@ -4,7 +4,7 @@
 |---|---|
 | Status | Approved for v1 |
 | Owner | Raphael |
-| Last updated | 2026-11-02 |
+| Last updated | 2026-11-03 |
 | Bundle ID | `com.thera-engineering.snapper` (working name) |
 
 ## 1. Summary
@@ -80,7 +80,7 @@ All three shortcuts can be changed in Settings.
 
 1. The user selects a rectangle or a window (section 5).
 2. The image is captured:
-   - Format: PNG at native pixel resolution (2× on Retina).
+   - Format: PNG at native pixel resolution (2× on Retina), with no cursor.
    - Window captures contain only that window, with no shadow, even if other windows cover it.
 3. The output depends on the **Screenshot destination** setting: *Save to file*, *Copy to clipboard*, or *Both*. The default is **Both**.
 4. The shutter sound plays if it is enabled (on by default). It is the system screen-capture sound (`/System/Library/Components/CoreAudio.component/Contents/SharedSupport/SystemSounds/system/Screen Capture.aif`), falling back to `NSSound(named: "Grab")`, then `"Pop"`, if that file is missing.
@@ -91,18 +91,19 @@ All three shortcuts can be changed in Settings.
 1. The user selects a rectangle or a window (section 5). Recording **starts immediately**, with no countdown.
    - **Window mode** records only that window. The capture follows the window as it moves, and anything covering it is excluded.
 2. **Output format:** `.mp4`, H.264, native resolution, 30 fps, cursor visible.
-   - Audio: the microphone is recorded only if the *Record microphone* setting is on (off by default). System audio is never recorded.
+   - Audio: the microphone is recorded only if the *Record microphone* setting is on (off by default). System audio is never recorded. If microphone permission is missing or no input device exists at recording start, record video only without prompting or showing an alert.
 3. **Recording overlay** (excluded from the recording):
    - A floating pill below the recorded area, or above it if there is no room below. If there is no room above either (for example, a full-screen selection), it is placed inside the area, near its bottom edge. It shows `elapsed time · Stop · Cancel` and stays on the recorded area's display.
    - A thin dashed border marks the recorded area.
-   - In window mode, the pill and the border follow the window as it moves (its frame is polled about 4 times per second).
-   - Errors: if Screen Recording permission is missing, the onboarding window opens. Any other failure to start or write the recording shows a short alert with the error.
+   - In window mode, the pill and the border follow the window as it moves (its frame is polled about 4 times per second). Minimizing, hiding, or moving the window off-screen keeps recording; hide the border and keep the pill reachable at its last position, restoring the border when the window returns.
+   - Errors: if Screen Recording permission is missing, the onboarding window opens. Any other failure to start or write the recording shows a short alert with the error. On a write failure, preserve and reveal a non-empty partial file; delete an empty file. Always show the error alert.
 4. **Stopping and cancelling:**
    - **Stop** saves the file. Pressing ⌘⇧5 again or clicking the menu bar icon does the same.
    - **Cancel** discards the recording immediately without confirmation.
    - Esc does **not** cancel a recording.
    - ⌘⇧4 and ⌘⇧6 are ignored while a recording is in progress.
-   - If the recorded window closes, or the recorded display is disconnected, the recording stops and is saved as if Stop had been pressed.
+   - If the recorded window closes, or in rectangle mode the recorded display is disconnected, the recording stops and is saved as if Stop had been pressed. In window mode, continue following the window when macOS moves it to a remaining display after disconnection.
+   - Quitting while recording stops and saves the recording before the app exits.
 5. After saving, Finder opens the save folder with the new file **selected** (`NSWorkspace.activateFileViewerSelecting`). Recordings are not copied to the clipboard.
 
 ## 8. Feature: Annotate (⌘⇧6)
@@ -131,6 +132,9 @@ All three shortcuts can be changed in Settings.
 | Delete | ⌫ | Deletes the selected shape |
 
 - The active tool **stays selected** after each shape is drawn.
+- Rectangle drags with either dimension below 3 view points and arrow drags shorter than 3 view points create no shape, at any zoom.
+- Rectangles are selected only near their outline (within half the stroke width plus 4 view points); their empty interior is not a hit.
+- Arrowhead length is 3 × stroke width + 8 image points, and its width is 80% of that length. For shorter arrows, clamp the head length to the arrow length and its width to 80% of that.
 - The last-used color is remembered between sessions. The initial default is **red**.
 - The last-used stroke width is remembered between sessions. The initial default is **M**.
 - Esc, when no text box is being edited, deselects the selected shape. It never closes the window.
@@ -141,7 +145,7 @@ All three shortcuts can be changed in Settings.
 ### 8.3 Text
 - Clicking with the Text tool places a text box and starts editing.
 - Enter adds a new line. **Esc** or clicking outside the box commits the text, and empty text boxes are removed.
-- Double-clicking existing text edits it again.
+- Double-clicking existing text edits it again. A single click on existing text with the Text tool also edits it, with the caret at the clicked character.
 - Text uses a bold system font in the current color. Its size follows the stroke width: S = 16pt, M = 24pt, L = 36pt, in image points.
 - Text has a thin contrasting outline (white around dark text, black around light text) and no background.
 
@@ -159,7 +163,7 @@ All three shortcuts can be changed in Settings.
   
   Screenshots use the capture time, and recordings use the time the recording started.
 - On a name collision, ` (2)`, ` (3)`, and so on are added to the name.
-- If the save folder can't be created or isn't writable, an alert says "Couldn't save to <folder>" and offers a **Choose Folder…** button. With the *Both* destination, the image is still copied to the clipboard.
+- If the save folder can't be created or isn't writable, an alert says "Couldn't save to <folder>" and offers a **Choose Folder…** button. With the *Both* destination, the image is still copied to the clipboard. Choosing a folder updates the setting and retries saving the pending screenshot once. The alert uses a tilde-abbreviated folder path, offers Cancel, and includes the system error details. Other screenshot failures use the title "Couldn't take screenshot".
 
 ## 10. Settings window (SwiftUI)
 
@@ -172,6 +176,7 @@ All three shortcuts can be changed in Settings.
 **Shortcuts**
 - One recorder field each for Screenshot, Record, and Annotate (defaults ⌘⇧4 / ⌘⇧5 / ⌘⇧6).
 - A warning appears when a binding conflicts with an enabled macOS screenshot shortcut, with a button that opens System Settings.
+- A binding already used by another Snapper shortcut is rejected.
 
 **Recording**
 - Record microphone (default **off**). Turning it on requests microphone permission. If permission is denied, the toggle switches back off and a note appears with an **Open System Settings** button.

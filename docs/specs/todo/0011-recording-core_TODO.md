@@ -115,7 +115,7 @@ selected.
       `cancelled` ⇒ `[.deleteFile(url), .ended]`.
     - `stopping --outputFailed(f)` or `stopTimedOut(fileHasContent:)-->`: for a cancel, `cancelled`
       ⇒ `[.deleteFile(url), .ended]`. Otherwise, if the file has content, `finished(url)` ⇒
-      `[.reveal(url), .ended]`. If it doesn't, `failed(f)` ⇒ `[.deleteFile(url),
+      `[.reveal(url), .showError(f), .ended]`. If it doesn't, `failed(f)` ⇒ `[.deleteFile(url),
       .showError(f), .ended]`. For `outputFailed`, the session checks the file size and passes
       the result in (see glue).
     - `recording --outputFailed(f)-->` (writer failed mid-recording) ⇒ the same as
@@ -245,7 +245,7 @@ selected.
 - **`project.yml`**: no new targets or Info.plist keys. Microphone usage text is 0014. New files
   are picked up by the source globs, so run `xcodegen generate`.
 
-- **PRD:** no changes. Everything here follows existing PRD text. See Open questions for the gaps.
+- **PRD:** user-approved deferred termination and always-alert write failures are recorded in §7. Implement the approved decisions below, including a test that a non-empty partial file is both revealed and accompanied by an error alert.
 
 ## Acceptance criteria
 
@@ -328,7 +328,7 @@ selected.
      `[.deleteFile, .showError, .ended]`.
   7. `streamStopped` while recording ⇒ `stopping`, `[.scheduleStopTimeout]` (no second
      `.stopCapture`). Then `outputFinished` ⇒ reveal.
-  8. `stopTimedOut(fileHasContent: true)` ⇒ `finished`, reveal. `false` ⇒ `failed`,
+  8. `stopTimedOut(fileHasContent: true)` ⇒ `finished`, reveal and show the timeout error alert. `false` ⇒ `failed`,
      `[.deleteFile, .showError, .ended]`.
   9. `outputFailed` while recording ⇒ `.stopCapture` first, then a resolution based on file content.
   10. Late callbacks in terminal phases (`outputFinished` after `finished`, `stopRequested` after
@@ -372,16 +372,7 @@ selected.
 
 ## Open questions
 
-1. **Quitting during a recording.** The PRD is silent. While recording, the menu (and its Quit item)
-   is unreachable, but ⌘Q in a key Snapper window (for example an annotation window) or a logout
-   can still terminate the app and leave an unplayable, unfinalized `.mp4`. **Recommendation:** in
-   `applicationShouldTerminate`, if a recording is active, call `stop()`, return
-   `.terminateLater`, and reply `true` on `.ended` (the file is saved and revealed). Until this is
-   decided, implement the recommendation and add the answer to PRD §7.4.
-2. **Write failure with a partial file.** The PRD says to show "a short alert with the error". This
-   spec keeps a non-empty file and reveals it **without** an alert, and deletes an empty file and
-   shows the alert. Confirm, or decide that a write failure should always alert (and possibly keep
-   the partial file too).
+None. User confirmed on 2026-11-03: Quitting stops and saves an active recording before exit, using deferred termination. Write failures always show an error alert; preserve and reveal non-empty partial files and delete empty files. This overrides the earlier no-alert partial-file proposal. Recorded in docs/PRD.md.
 
 ## Out of scope
 

@@ -137,8 +137,7 @@ As a Snapper user, I press ⌘⇧5, press Space, and click a window. Snapper rec
 
 ## Open questions
 
-1. **A minimized or off-screen recorded window** (minimized, moved to another Space, or its app hidden). The PRD (§7.3, §7.4) only covers moving and closing. **Recommendation:** this doesn't count as a close. Keep recording (ScreenCaptureKit keeps or freezes the last frame), hide the dashed border while the window is off-screen, keep the pill visible at its last position so Stop and Cancel stay reachable, and show the border again when the window returns. If accepted, add a sentence to docs/PRD.md §7.3. The reducer already emits `.hidden` and `.shown` separately, so a different answer only changes the coordinator glue.
-2. **A display disconnects during a window recording.** §7.4 says the recording stops when "the recorded display is disconnected". This spec reads that as applying only to rectangle (display) recordings. In window mode, macOS moves the window to a remaining display, and the recording keeps following it. **Recommendation:** keep this reading, and clarify §7.4 in the PRD to say "in rectangle mode, the recorded display is disconnected".
+None. User confirmed on 2026-11-03: Minimized, hidden, or off-screen windows keep recording, with the border hidden and pill reachable at its last position; restore the border on return. Window recordings follow the window to a remaining display after disconnection; only rectangle recordings stop for recorded-display disconnection. Recorded in docs/PRD.md.
 
 ## Out of scope
 

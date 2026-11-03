@@ -224,7 +224,7 @@ As a Snapper user, I right-click the menu bar icon (or choose **Settings…**) a
 
 ## Open questions
 
-- **Duplicate bindings among Snapper's own three shortcuts.** The PRD is silent, and KeyboardShortcuts doesn't prevent duplicates across `Name`s (if two names share a binding, both handlers fire). The spec currently **blocks** a duplicate with the alert "Already used by Snapper's “<Action>” shortcut." via `shortcutValidation`. Recommended answer: keep the block, and add one line to docs/PRD.md §10 Shortcuts: "A binding already used by another Snapper shortcut is rejected." Confirm or override before implementing.
+None. User confirmed on 2026-11-03: Reject bindings already assigned to another Snapper action, using the specified validation alert. Recorded in docs/PRD.md.
 
 ## Out of scope
 

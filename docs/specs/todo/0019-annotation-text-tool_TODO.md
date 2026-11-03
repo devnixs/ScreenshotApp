@@ -198,7 +198,7 @@ As a Snapper user annotating a capture, I press T, click on the image, type a (p
 
 ## Open questions
 
-- **Q1 — Single click on existing text with the Text tool.** PRD §8.3 says "Clicking with the Text tool places a text box" and "Double-clicking existing text edits it again", but doesn't say what a *single* Text-tool click on existing text does. This spec chooses: **it starts editing that text (caret at the click)**, so you never stack a new empty box on top of a label you meant to fix, and the double-click also works (its first click already enters editing). The alternative is that it places a new box on top. If the user picks the alternative, change decision 9 and acceptance criterion 6, and add a line to PRD §8.3.
+None. User confirmed on 2026-11-03: A single Text-tool click on existing text edits it with the caret at the clicked character; double-click also edits it. Recorded in docs/PRD.md.
 
 ## Out of scope
 
