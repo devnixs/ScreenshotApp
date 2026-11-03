@@ -61,7 +61,7 @@ struct ShapeRendererTests {
         #expect(try pixel(context, 95, 50)[3] == 0)
         #expect(try pixel(context, 8, 50)[3] == 0)
     }
-    @Test func textIsSkippedAndGraphicsStateRestored() throws {
+    @Test func emptyTextAndGraphicsStateRestored() throws {
         let context = try bitmap()
         yDown(context)
         let before = context.ctm
@@ -69,4 +69,26 @@ struct ShapeRendererTests {
         #expect(context.ctm == before)
         #expect(try pixel(context, 0, 0)[3] == 0)
     }
+    @Test func outlinedTextUsesTopLeftImagePixelsWithoutBackground() throws {
+        let context = try bitmap(200)
+        yDown(context)
+        let size = AppKitTextMeasurer().layoutSize(of: "F\nW", fontPixelSize: 24)
+        let shape = AnnotationShape(kind: .text(TextBox(origin: CGPoint(x: 20, y: 10), string: "F\nW", measuredSize: size)),
+                                    color: RGBAColor(red: 1, green: 0, blue: 0), strokeWidth: .m)
+        ShapeRenderer.draw(shape, pixelsPerPoint: 1, in: context)
+        var fill = 0, outline = 0, upper = 0, lower = 0
+        for y in 0..<200 { for x in 0..<200 {
+            let p = try pixel(context, x, y)
+            if p[3] > 200 {
+                if p[0] > 200 && p[1] < 30 && p[2] < 30 { fill += 1 }
+                if p[0] > 200 && p[1] > 200 && p[2] > 200 { outline += 1 }
+                if y < 90 { upper += 1 } else { lower += 1 }
+            }
+        } }
+        #expect(fill > 0 && outline > 0)
+        #expect(upper > 0 && lower == 0)
+        #expect(try pixel(context, 10, 10)[3] == 0)
+        #expect(try pixel(context, 150, 30)[3] == 0)
+    }
+
 }

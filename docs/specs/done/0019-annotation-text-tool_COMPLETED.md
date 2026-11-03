@@ -206,3 +206,31 @@ None. User confirmed on 2026-11-03: A single Text-tool click on existing text ed
 - Shape selection, move, delete, swatches/color panel, S/M/L UI, remembered color/width, general undo/redo menu wiring, and Esc-deselect: **0018** (this spec only extends them for text).
 - The `TextBox` shape case, its hit-testing, and moving it: **0015**. Undo stack and dirty flag: **0016**. Canvas, transform, window sizing, tool switching, and rectangle/arrow rendering: **0017**.
 - Text resize handles, rotation, alignment options, font choice, background fills, and auto-wrapping: not in v1 (PRD §2, §8.2).
+
+
+## Verification status
+
+Implemented 2026-11-03. `xcodegen generate`, `xcodebuild -scheme Snapper -configuration Debug build`, and the full `xcodebuild -scheme Snapper test` all succeeded. **345 tests in 61 suites passed**, including text commit/undo, contrast, scale/placement, click routing, AppKit measurement, and offscreen outlined-text orientation/background checks. No GUI capture or editing flow was run.
+
+`TextBox.measuredSize` excludes the outline and remains authoritative for hit-testing. Shared `TextStyle` drives measurement, editor attributes, and two-pass rendering. `canvas.textEditingController.commit()` is the integration hook for 0020 save/copy/close/quit paths. AGENTS.md records the additional pure policy boundaries; PRD behavior was already settled by the approved Text-tool click decision.
+
+Manual verification (all **not yet run by user**; the numbered detailed procedure above remains the reference):
+
+- [ ] not yet run by user — Capture mixed dark/light content using ⌘⇧6.
+- [ ] not yet run by user — T/click places a centered caret; type bold red M text.
+- [ ] not yet run by user — Return inserts a new line without automatic wrapping.
+- [ ] not yet run by user — Esc commits, preserves the active tool, and shows the thin outline without a background.
+- [ ] not yet run by user — An outside canvas click commits and is consumed.
+- [ ] not yet run by user — Empty/whitespace new boxes leave no undo action.
+- [ ] not yet run by user — Yellow/white have black outlines; black/red have white outlines.
+- [ ] not yet run by user — Select double-click and Text single/double-click re-enter at the clicked character; undo/redo coalesces the full edit.
+- [ ] not yet run by user — Deleting all existing text removes its shape; undo restores it.
+- [ ] not yet run by user — Swatch and S/M/L apply live during editing without moving focus; one undo restores the whole session.
+- [ ] not yet run by user — Selected committed text remeasures when S/M/L changes; undo restores its size and anchor.
+- [ ] not yet run by user — V/R/A/T and Delete type/edit normally while editing.
+- [ ] not yet run by user — Copy/cut/paste/select-all use normal plain-text editing commands; local undo never reaches document history.
+- [ ] not yet run by user — Custom color panel updates text live; key-window/app switches retain the session.
+- [ ] not yet run by user — Resize at 1×/2× capture scales; the editor and committed text stay aligned.
+- [ ] not yet run by user — Edge placement and long text clip at image edges; marked/IME text survives commit.
+- [ ] not yet run by user — After 0020: Retina saved/copied PNG text matches at full resolution.
+- [ ] not yet run by user — After 0020: close/save/image-copy/quit commit active text before dirty-state handling.

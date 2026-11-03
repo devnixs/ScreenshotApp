@@ -3,9 +3,11 @@ import AppKit
 @MainActor
 final class AnnotationCanvasView: NSView, NSMenuItemValidation {
     var document: AnnotationDocument { didSet { onDocumentChange?() } }
+    lazy var textEditingController = TextEditingController(canvas: self)
     let image: CGImage
     var currentTool: AnnotationTool = .rectangle {
         didSet {
+            textEditingController.commit()
             abortDrag()
             if currentTool != .select { document.select(id: nil) }
             needsDisplay = true
@@ -51,14 +53,14 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
         context.scaleBy(x: transform.scale, y: transform.scale)
         context.clip(to: CGRect(origin: .zero, size: document.imagePixelSize))
         ShapeRenderer.drawImage(image, in: context)
-        ShapeRenderer.draw(document.shapes.map { $0.id == dragPreview?.id ? (dragPreview ?? $0) : $0 }, pixelsPerPoint: document.pixelsPerPoint, in: context)
+        ShapeRenderer.draw(document.shapes.filter { $0.id != textEditingController.editingShapeID }.map { $0.id == dragPreview?.id ? (dragPreview ?? $0) : $0 }, pixelsPerPoint: document.pixelsPerPoint, in: context)
         if let previewShape { ShapeRenderer.draw(previewShape, pixelsPerPoint: document.pixelsPerPoint, in: context) }
         context.restoreGState()
         drawSelection(transform: transform)
     }
 
     private func drawSelection(transform: CanvasTransform) {
-        guard currentTool == .select, let selected = document.selectedShape else { return }
+        guard !textEditingController.isEditing, currentTool == .select, let selected = document.selectedShape else { return }
         let shape = dragPreview ?? selected
         NSColor.controlAccentColor.setStroke()
         if case .text = shape.kind {
@@ -80,6 +82,17 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
     }
 
     override func mouseDown(with event: NSEvent) {
+        let viewPoint = convert(event.locationInWindow, from: nil)
+        let point = canvasTransform.isInsideImage(viewPoint: viewPoint) ? canvasTransform.imagePoint(fromView: viewPoint) : nil
+        switch TextInteractionDecision.decide(isEditing: textEditingController.isEditing, tool: currentTool,
+                                             clickCount: event.clickCount, point: point, document: document) {
+        case .commit: textEditingController.commit(); return
+        case .beginNew(let point): textEditingController.begin(newAt: point); return
+        case .edit(let id):
+            if let point { textEditingController.begin(editing: id, caretAt: point) }
+            return
+        case .none: break
+        }
         window?.makeFirstResponder(self)
         if currentTool == .select {
             guard let point = canvasTransform.imagePoint(fromView: convert(event.locationInWindow, from: nil)) else { return }
@@ -135,11 +148,9 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
         }
         let forbidden: NSEvent.ModifierFlags = [.command, .option, .control]
         let characters = event.charactersIgnoringModifiers ?? ""
-        // The visible but disabled Text tool must not beep or change tools before 0019.
-        if characters.lowercased() == "t", event.modifierFlags.intersection(forbidden).isEmpty { return }
         if let tool = AnnotationTool.forShortcut(characters: characters,
                                                 hasCommandOptionOrControl: !event.modifierFlags.intersection(forbidden).isEmpty,
-                                                textToolEnabled: false) {
+                                                textToolEnabled: true) {
             onToolChange?(tool)
         } else { super.keyDown(with: event) }
     }
@@ -152,6 +163,7 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
         needsDisplay = true
     }
     override func cancelOperation(_ sender: Any?) {
+        if textEditingController.isEditing { textEditingController.commit(); return }
         abortDrag()
         document.select(id: nil)
     }
@@ -187,6 +199,7 @@ final class AnnotationCanvasView: NSView, NSMenuItemValidation {
     }
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
+        textEditingController.layout(using: canvasTransform)
         needsDisplay = true
         window?.invalidateCursorRects(for: self)
     }

@@ -1,4 +1,4 @@
-import CoreGraphics
+import AppKit
 
 /// The destination CTM must map top-left, y-down image pixels into the destination.
 enum ShapeRenderer {
@@ -38,7 +38,18 @@ enum ShapeRenderer {
             context.addLine(to: head.baseRight)
             context.closePath()
             context.fillPath()
-        case .text: break // Text rendering is supplied by 0019.
+        case .text(let box):
+            let size = TextMetrics.fontPixelSize(for: shape.strokeWidth, pixelsPerPoint: pixelsPerPoint)
+            NSGraphicsContext.saveGraphicsState()
+            defer { NSGraphicsContext.restoreGraphicsState() }
+            NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
+            context.setLineJoin(.round)
+            let rect = CGRect(origin: box.origin, size: box.measuredSize)
+            for attributes in [TextStyle.strokeAttributes(size: size, color: shape.color),
+                               TextStyle.attributes(size: size, color: shape.color)] {
+                NSAttributedString(string: box.string, attributes: attributes).draw(with: rect,
+                    options: [.usesLineFragmentOrigin, .usesFontLeading])
+            }
         }
     }
 }

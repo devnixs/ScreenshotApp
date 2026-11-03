@@ -49,7 +49,7 @@ final class AnnotationWindowController: NSWindowController, NSWindowDelegate, NS
             tools.setWidth(36, forSegment: i)
         }
         tools.setAccessibilityLabel("Annotation tools")
-        tools.setEnabled(false, forSegment: AnnotationTool.text.segmentIndex)
+        tools.refusesFirstResponder = true
         tools.selectedSegment = currentTool.segmentIndex
         canvas.onToolChange = { [weak self] tool in self?.currentTool = tool }
         canvas.onDocumentChange = { [weak self] in self?.refreshStyle() }
@@ -73,7 +73,7 @@ final class AnnotationWindowController: NSWindowController, NSWindowDelegate, NS
     }
     required init?(coder: NSCoder) { nil }
     @objc private func toolChanged(_ sender: NSSegmentedControl) {
-        guard let tool = AnnotationTool(segmentIndex: sender.selectedSegment), tool != .text else { return }
+        guard let tool = AnnotationTool(segmentIndex: sender.selectedSegment) else { return }
         currentTool = tool
         window?.makeFirstResponder(canvas)
     }
@@ -88,10 +88,13 @@ final class AnnotationWindowController: NSWindowController, NSWindowDelegate, NS
         return item
     }
     private func configureStyleControls() {
+        stroke.refusesFirstResponder = true
+        customColor.refusesFirstResponder = true
         styleControls.orientation = .horizontal
         styleControls.spacing = 4
         for (index, preset) in ColorPreset.allCases.enumerated() {
             let button = AnnotationSwatchButton(title: "", target: self, action: #selector(swatchPicked(_:)))
+            button.refusesFirstResponder = true
             button.tag = index
             button.swatchColor = preset.color.nsColor
             button.toolTip = preset.displayName
@@ -117,7 +120,7 @@ final class AnnotationWindowController: NSWindowController, NSWindowDelegate, NS
         refreshStyle()
     }
     func refreshStyle() {
-        _ = toolbarStyleState.reduce(.selectedShapeStyleChanged(canvas.document.selectedShape?.style))
+        _ = toolbarStyleState.reduce(.selectedShapeStyleChanged(canvas.textEditingController.style ?? canvas.document.selectedShape?.style))
         canvas.currentColor = toolbarStyleState.currentStyle.color
         canvas.currentStrokeWidth = toolbarStyleState.currentStyle.strokeWidth
         for (index, button) in swatches.enumerated() {
@@ -130,15 +133,18 @@ final class AnnotationWindowController: NSWindowController, NSWindowDelegate, NS
     private func pick(_ event: ToolbarStyleEvent) {
         guard !canvas.isDragging else { return }
         let effects = toolbarStyleState.reduce(event)
-        if var shape = canvas.document.selectedShape {
+        if canvas.textEditingController.isEditing {
+            if let color = effects.persistColor { canvas.textEditingController.applyColor(color) }
+            if let width = effects.persistStrokeWidth { canvas.textEditingController.applyStrokeWidth(width) }
+        } else if var shape = canvas.document.selectedShape {
             if let color = effects.applyColorToSelection { shape.color = color }
-            if let width = effects.applyStrokeWidthToSelection { shape.strokeWidth = width }
+            if let width = effects.applyStrokeWidthToSelection { shape = shape.withStrokeWidth(width, pixelsPerPoint: canvas.document.pixelsPerPoint, measurer: AppKitTextMeasurer()) }
             canvas.document.replace(shape)
         }
         if let color = effects.persistColor { settings.annotationColor = color }
         if let width = effects.persistStrokeWidth { settings.annotationStrokeWidth = width }
         refreshStyle()
-        window?.makeFirstResponder(canvas)
+        if !canvas.textEditingController.isEditing { window?.makeFirstResponder(canvas) }
     }
     @objc private func swatchPicked(_ sender: NSButton) { pick(.colorPicked(RGBAColor.presets[sender.tag])) }
     @objc private func strokePicked(_ sender: NSSegmentedControl) {
@@ -154,7 +160,7 @@ final class AnnotationWindowController: NSWindowController, NSWindowDelegate, NS
         Self.colorPanelOwner = self
         suppressColorAction = true
         panel.showsAlpha = false
-        panel.isContinuous = false
+        panel.isContinuous = true
         panel.color = toolbarStyleState.displayedStyle.color.nsColor
         panel.setTarget(self)
         panel.setAction(#selector(colorPanelDidPick(_:)))
@@ -165,8 +171,12 @@ final class AnnotationWindowController: NSWindowController, NSWindowDelegate, NS
         pick(.colorPicked(color))
     }
     func windowDidBecomeKey(_ notification: Notification) {
-        window?.makeFirstResponder(canvas)
+        if !canvas.textEditingController.isEditing { window?.makeFirstResponder(canvas) }
         if NSColorPanel.shared.isVisible { retargetColorPanel() }
+    }
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        canvas.textEditingController.commit()
+        return true
     }
     func windowWillClose(_ notification: Notification) {
         // NSColorPanel exposes setters but no target getter. Clear only our panel ownership.
