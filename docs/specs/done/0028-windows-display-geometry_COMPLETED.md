@@ -485,3 +485,18 @@ pixels and real per-monitor DPIs):
 - The macOS Y-flip helpers, `primaryHeight`, `displayLocalTopLeftRect`, and `pixelSize(of:scale:)`:
   not needed on Windows (no Y flip; global coordinates are already pixels).
 - Selections spanning several monitors: a non-goal (docs/PRD.md §2 line 36).
+
+## Verification status
+
+Automated verification on 2026-11-03: `dotnet build windows/Snapper.slnx -c Debug` passed with **0 warnings and 0 errors**. `dotnet test windows/Snapper.slnx` passed **302 tests**, including **81 new cases**, with no failures or skips. Tests cover the complete geometry matrix above, 96/120/144/168/192 DPI, negative origins, stable overlap/distance ties, float-noise alignment, adjacent rounded window edges, native-pixel capture sizes, and set-based configuration changes excluding work areas. Core's platform-reference smoke test remains green. PRD and AGENTS.md already describe these rules; neither needed changes.
+
+Implemented the Core geometry types, monitor enumeration/handle resolution, a hidden top-level broadcast listener with dispatcher-coalesced checks and a 300 ms follow-up, and coordinator ownership/disposal. Provider/watcher paths compile but require a Windows 11 GUI session to verify. No GUI verification was performed.
+
+- [ ] not yet run by user: Launch a Debug build with 100% and 150% monitors; confirm normal tray behavior and no "Displays changed" line at startup.
+- [ ] not yet run by user: Change the second monitor from 150% to 125%; confirm one change line showing 120 DPI and unchanged physical bounds.
+- [ ] not yet run by user: Move the second monitor left of and above the primary in Display settings; confirm one line per applied arrangement and the expected negative X/Y bounds.
+- [ ] not yet run by user: Change the second monitor's resolution; confirm one line with its new bounds size.
+- [ ] not yet run by user: Disconnect and reconnect the second monitor; confirm one line each time and primary-first ordering.
+- [ ] not yet run by user: Toggle taskbar auto-hide on/off; confirm no configuration-change line.
+- [ ] not yet run by user: Switch light/dark theme; confirm no configuration-change line.
+- [ ] not yet run by user: Exit Snapper; confirm a clean process exit without disposed-watcher exceptions.

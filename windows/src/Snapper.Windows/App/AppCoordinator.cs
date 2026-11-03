@@ -3,6 +3,8 @@ using System.Windows;
 using System.Windows.Controls;
 using Snapper.Core.Settings;
 using Snapper.Windows.Support;
+using Snapper.Windows.Capture;
+using System.Windows.Threading;
 
 namespace Snapper.Windows.App;
 
@@ -15,7 +17,13 @@ internal sealed class AppCoordinator : IDisposable
         new JsonSettingsStore(JsonSettingsStore.DefaultFilePath(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData))), SaveFolder.DefaultPath);
 
-    public AppCoordinator() => Settings.SaveFailed += SettingsSaveFailed;
+    internal DisplayChangeWatcher Displays { get; }
+
+    public AppCoordinator()
+    {
+        Settings.SaveFailed += SettingsSaveFailed;
+        Displays = new DisplayChangeWatcher(Dispatcher.CurrentDispatcher);
+    }
     private static void SettingsSaveFailed(object? sender, SettingsSaveFailedEventArgs args) => Debug.WriteLine($"Snapper: {args.Exception}");
     public void Start() => tray ??= new TrayIconController(this);
     public void StartScreenshot() => Debug.WriteLine("Snapper: StartScreenshot() not implemented yet");
@@ -54,6 +62,7 @@ internal sealed class AppCoordinator : IDisposable
 
     public void Dispose()
     {
+        Displays.Dispose();
         tray?.Dispose();
         tray = null;
     }
