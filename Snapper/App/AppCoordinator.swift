@@ -64,7 +64,7 @@ final class AppCoordinator: NSObject {
             return
         }
         Task { @MainActor in
-            guard let result = await overlay.selectRegion() else {
+            guard let result = await overlay.selectRegion(for: purpose) else {
                 send(.selectionCancelled)
                 return
             }

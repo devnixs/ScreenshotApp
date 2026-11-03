@@ -27,6 +27,7 @@ final class AnnotationWindowManager {
         controller.showWindow(nil)
         NSApp.activate()
         controller.window?.makeKeyAndOrderFront(nil)
+        controller.window?.orderFrontRegardless()
         controller.window?.makeFirstResponder(controller.canvas)
     }
 }

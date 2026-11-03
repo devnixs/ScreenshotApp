@@ -15,15 +15,17 @@ final class SelectionOverlayController: NSObject {
     private var sessionToken: UUID?
     private var continuation: CheckedContinuation<SelectionResult?, Never>?
     private var previousApplication: NSRunningApplication?
+    private var purpose: CapturePurpose?
     private var isDismissing = false
 
-    func selectRegion() async -> SelectionResult? {
+    func selectRegion(for purpose: CapturePurpose) async -> SelectionResult? {
         guard continuation == nil else {
             logger.fault("Selection requested while already presenting")
             return nil
         }
         return await withCheckedContinuation { continuation in
             self.continuation = continuation
+            self.purpose = purpose
             present()
         }
     }
@@ -115,7 +117,7 @@ final class SelectionOverlayController: NSObject {
 
     func cancel() {
         guard continuation != nil, !isDismissing else { return }
-        close()
+        close(outcome: .cancelled)
         let pending = continuation
         continuation = nil
         pending?.resume(returning: nil)
@@ -150,7 +152,7 @@ final class SelectionOverlayController: NSObject {
     private func finish(with result: SelectionResult) {
         guard !panels.isEmpty else { return }
         isDismissing = true
-        close()
+        close(outcome: .selected)
         Task { @MainActor in
             await Task.yield()
             try? await Task.sleep(for: Self.dismissalDelay)
@@ -161,7 +163,7 @@ final class SelectionOverlayController: NSObject {
         }
     }
 
-    private func close() {
+    private func close(outcome: SelectionFocusPolicy.Outcome) {
         sessionToken = nil
         candidateTask?.cancel()
         candidateTask = nil
@@ -173,7 +175,11 @@ final class SelectionOverlayController: NSObject {
         panels.removeAll()
         CATransaction.flush()
         NSCursor.arrow.set()
-        if let previousApplication, !previousApplication.isTerminated { previousApplication.activate() }
+        if let purpose, SelectionFocusPolicy.restoresPreviousApplication(purpose: purpose, outcome: outcome),
+           let previousApplication, !previousApplication.isTerminated {
+            previousApplication.activate()
+        }
         previousApplication = nil
+        purpose = nil
     }
 }

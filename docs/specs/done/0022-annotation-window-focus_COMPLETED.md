@@ -94,3 +94,20 @@ As a Snapper user, after I select an area with ⌘⇧6, the annotation window ap
 - Restoring focus to the previous app when the last annotation window closes (decided: keep default macOS behavior).
 - Copy & Close (0021-annotation-copy-and-close).
 - Any change to the selection overlay's own activation in `present()`.
+
+## Verification status
+
+Automated verification on 2026-11-03: `xcodegen generate`, `xcodebuild -scheme Snapper -configuration Debug build`, and `xcodebuild -scheme Snapper test` all passed. The full suite passed **368 tests in 67 suites**, including four new selection-focus policy tests. PRD §5, §8.1, and §12 already describe this behavior; no PRD or AGENTS.md changes were needed.
+
+GUI behavior has not been verified. With Screen Recording permission granted:
+
+- [ ] not yet run by user: From Finder, press ⌘⇧6 and select a rectangle; confirm the editor is in front, has an active title bar, and Snapper owns the menu bar.
+- [ ] not yet run by user: Without clicking first, use a tool key, draw a shape, and undo with ⌘Z.
+- [ ] not yet run by user: From Safari, use ⌘⇧6 window mode and confirm the new editor is in front and key.
+- [ ] not yet run by user: With an editor already open, capture another annotation from Safari; confirm the new editor becomes key above the old one.
+- [ ] not yet run by user: From Finder, take a ⌘⇧4 screenshot and confirm focus returns to Finder.
+- [ ] not yet run by user: From Finder, start a ⌘⇧5 recording and confirm Finder regains focus; stop the recording.
+- [ ] not yet run by user: From Finder, cancel a ⌘⇧6 selection with Esc; confirm Finder regains focus and no editor opens.
+- [ ] not yet run by user: Repeat the Finder annotation capture ten times and confirm focus succeeds every time.
+
+Rebuilding with a different signature can reset Screen Recording permission.
