@@ -445,3 +445,28 @@ As a Snapper user on Windows, I choose **Settings…** from the tray menu, launc
 - The settings file format, defaults, and `KeyChord` display: **0027**. Folder resolution and creation: **0026**. The "Couldn't save to" alert: **0031**.
 - The app icon on the Settings window: **0047**.
 - A "Reset to defaults" button, a writability check at pick time, and anything not in PRD §10/§13.9 (same exclusions as macOS 0010). Onboarding: not on Windows (§13.10).
+
+## Verification status
+
+Automated verification on 2026-11-03: `dotnet build windows/Snapper.slnx -c Debug` passed with **0 warnings and 0 errors**. `dotnet test windows/Snapper.slnx` passed **685 tests**, including **102 new cases**, with zero failures or skips. The new cases cover shortcut validation and exact hints, recorder focus/effect pairing and current-binding lookup, launch command/StartupApproved state mapping, tab selection, and suspended hotkey registration/retry decisions.
+
+The placeholder is replaced by a reusable General/Shortcuts window. Its view model uses the existing typed settings/store, and the registry remains the launch-at-login source of truth. Recorders release their hotkeys on focus loss, deactivation, hide, or close; WPF Tab traversal runs from the recorder's position after ending the pure session, avoiding a cycle back into the same field. PRD §13.9 already includes every resolved decision; no PRD or AGENTS.md edit was needed.
+
+GUI behavior has **not** been verified. On Windows 11:
+
+- [ ] not yet run by user: Open Settings from either tray menu and reopen it from another app; confirm one focused Settings window and one taskbar button.
+- [ ] not yet run by user: Launch Snapper a second time; confirm the existing Settings window comes forward and only one process/tray icon remains.
+- [ ] not yet run by user: Close Settings using × and Alt+F4, then reopen; confirm Snapper keeps running and the selected tab and values persist.
+- [ ] not yet run by user: Restart with a fresh settings file; confirm General defaults (launch off, Pictures\Screenshots, Both, sound on).
+- [ ] not yet run by user: Choose a folder, change destination and sound, restart, then capture; confirm persistence and screenshot behavior.
+- [ ] not yet run by user: Delete the selected save folder and use Open folder; confirm recreation and Explorer opening.
+- [ ] not yet run by user: Toggle launch at login, inspect the quoted Run value, sign out/in, and toggle off; confirm startup and value removal.
+- [ ] not yet run by user: Delete or replace the Run value with another exe path, then reactivate Settings; confirm the checkbox reflects the registry and checking it restores this exe path.
+- [ ] not yet run by user: Disable Snapper in Task Manager Startup apps; confirm the checked toggle, note and Open Startup Apps link, then uncheck/recheck to re-enable it.
+- [ ] not yet run by user: Record Ctrl+Alt+S for Screenshot; confirm modifier preview, immediate tray-label change, new global shortcut, and removal of the old binding.
+- [ ] not yet run by user: Re-record a current binding without launching capture, then try another Snapper binding; confirm the duplicate alert and unchanged binding.
+- [ ] not yet run by user: Try plain/Shift-only, Windows-key and reserved chords (including Alt+F4); confirm hints, beep, continued recording, and Esc cancellation. Check Tab/Shift+Tab traversal.
+- [ ] not yet run by user: Clear with Backspace/Delete and ×; confirm placeholders, no tray shortcut, and unregistration. Check that × does not start recording.
+- [ ] not yet run by user: End recording by clicking blank space, Alt+Tab, hiding/closing, or switching tabs; confirm shortcuts resume and reopening does not start a recorder automatically.
+- [ ] not yet run by user: Hold a binding in another app, restart Snapper and click its notification; confirm the Shortcuts tab, live warning, working other shortcuts/tray commands, and warning removal after rebinding.
+- [ ] not yet run by user: Move Settings between 100% and 150% monitors; confirm crisp scaling and correct layout.

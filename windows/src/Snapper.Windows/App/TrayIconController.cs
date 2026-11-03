@@ -100,7 +100,7 @@ internal sealed class TrayIconController : IDisposable
             case TrayMenuEntry.Screenshot: coordinator.StartScreenshot(); break;
             case TrayMenuEntry.Record: coordinator.StartRecording(); break;
             case TrayMenuEntry.Annotate: coordinator.StartAnnotate(); break;
-            case TrayMenuEntry.Settings: coordinator.OpenSettings(SettingsTab.General); break;
+            case TrayMenuEntry.Settings: coordinator.OpenSettings(); break;
             case TrayMenuEntry.Exit: coordinator.Exit(); break;
         }
     }

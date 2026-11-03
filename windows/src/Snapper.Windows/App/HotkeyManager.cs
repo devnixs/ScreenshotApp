@@ -34,10 +34,28 @@ internal sealed class HotkeyManager : IDisposable
     public event Action? StatusesChanged;
     public HotkeyStatus StatusOf(CapturePurpose p) { dispatcher.VerifyAccess(); return state.StatusOf(p); }
 
+    public bool IsSuspended { get; private set; }
+    public void Suspend()
+    {
+        dispatcher.VerifyAccess();
+        if (disposed || IsSuspended) return;
+        IsSuspended = true;
+        foreach (var p in state.Suspend()) PInvoke.UnregisterHotKey(new HWND(source.Handle), HotkeyRegistrationState.IdOf(p));
+        StatusesChanged?.Invoke();
+    }
+    public void Resume(AppSettings current)
+    {
+        dispatcher.VerifyAccess();
+        if (disposed || !IsSuspended) return;
+        IsSuspended = false;
+        Sync(current);
+    }
+
     public void Sync(AppSettings settings)
     {
         dispatcher.VerifyAccess();
         ObjectDisposedException.ThrowIf(disposed, this);
+        if (IsSuspended) return;
         var desired = HotkeyBindings.From(settings);
         var plan = state.Plan(desired);
         var hwnd = new HWND(source.Handle);
@@ -59,7 +77,7 @@ internal sealed class HotkeyManager : IDisposable
 
     private nint WndProc(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
     {
-        if (!disposed && message == PInvoke.WM_HOTKEY && HotkeyRegistrationState.PurposeForId((int)wParam) is { } purpose)
+        if (!disposed && !IsSuspended && message == PInvoke.WM_HOTKEY && HotkeyRegistrationState.PurposeForId((int)wParam) is { } purpose)
         {
             handled = true;
             Pressed?.Invoke(purpose);

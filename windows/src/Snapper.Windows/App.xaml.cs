@@ -1,5 +1,4 @@
 using System.Windows;
-using Snapper.Core.Settings;
 using Snapper.Windows.App;
 using Forms = System.Windows.Forms;
 
@@ -24,7 +23,7 @@ public partial class SnapperApplication : Application
         Forms.Application.SetHighDpiMode(Forms.HighDpiMode.PerMonitorV2);
         coordinator = new AppCoordinator();
         coordinator.Start();
-        instance.Listen(() => Dispatcher.BeginInvoke(() => coordinator?.OpenSettings(SettingsTab.General)));
+        instance.Listen(() => Dispatcher.BeginInvoke(() => coordinator?.OpenSettings()));
     }
 
     protected override void OnExit(ExitEventArgs e)

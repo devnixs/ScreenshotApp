@@ -5,7 +5,7 @@ using Snapper.Core.Support;
 using Snapper.Core.Capture;
 using Snapper.Windows.Interop;
 using System.Windows;
-using System.Windows.Controls;
+using Snapper.Windows.Settings;
 using Snapper.Core.Settings;
 using Snapper.Windows.Support;
 using Snapper.Windows.Capture;
@@ -16,7 +16,7 @@ namespace Snapper.Windows.App;
 internal sealed class AppCoordinator : IDisposable
 {
     private TrayIconController? tray;
-    private Window? settingsWindow;
+    private SettingsWindowController? settingsWindow;
     private readonly AppModeMachine modeMachine = new();
     private readonly Dispatcher dispatcher = Dispatcher.CurrentDispatcher;
     private HotkeyManager? hotkeys;
@@ -159,34 +159,21 @@ internal sealed class AppCoordinator : IDisposable
     {
         if (disposed) return;
         hotkeys?.Sync(Settings);
+        tray?.UpdateShortcutTexts(HotkeyBindings.From(Settings));
     }
 
-    public void OpenSettings(SettingsTab tab = SettingsTab.General)
+    public void SuspendHotkeys() { if (!disposed) hotkeys?.Suspend(); }
+    public void ResumeHotkeys() { if (!disposed) hotkeys?.Resume(Settings); }
+    public void OpenSettings(SettingsTab? tab = null)
     {
-        Debug.WriteLine($"Snapper: OpenSettings({tab})");
-        if (settingsWindow is null)
-        {
-            settingsWindow = new Window
-            {
-                Title = "Snapper Settings", Width = 420, Height = 200,
-                WindowStartupLocation = WindowStartupLocation.CenterScreen,
-                ResizeMode = ResizeMode.NoResize, ShowInTaskbar = true,
-                Content = new TextBlock
-                {
-                    Text = "Settings will appear here.",
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center
-                }
-            };
-            settingsWindow.Closed += (_, _) => settingsWindow = null;
-        }
-        settingsWindow.Show();
-        if (settingsWindow.WindowState == WindowState.Minimized) settingsWindow.WindowState = WindowState.Normal;
-        settingsWindow.Activate();
+        if (disposed || hotkeys is null) return;
+        settingsWindow ??= new SettingsWindowController(new SettingsViewModel(Settings, hotkeys, SuspendHotkeys, ResumeHotkeys));
+        settingsWindow.Show(tab);
     }
 
     public void Exit()
     {
+        settingsWindow?.AllowClose();
         Dispose();
         Application.Current.Shutdown();
     }
@@ -195,6 +182,8 @@ internal sealed class AppCoordinator : IDisposable
     {
         if (disposed) return;
         disposed = true;
+        settingsWindow?.Dispose();
+        settingsWindow = null;
         Settings.PropertyChanged -= SettingsChanged;
         Settings.SaveFailed -= SettingsSaveFailed;
         if (hotkeys is not null)

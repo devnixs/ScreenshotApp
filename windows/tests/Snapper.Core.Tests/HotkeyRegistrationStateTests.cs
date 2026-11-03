@@ -69,4 +69,35 @@ public sealed class HotkeyRegistrationStateTests
     {var state=new HotkeyRegistrationState();Sync(state);_=state.Plan(D(7));Assert.Equal(C(4),state.ChordOf(CapturePurpose.Screenshot));Assert.Equal(HotkeyStatus.Registered,state.StatusOf(CapturePurpose.Screenshot));}
     [Fact] public void ThreeDuplicatesHaveOnlyOneWinnerEvenWhenWinnerFails()
     {var state=new HotkeyRegistrationState();var desired=D(4,4,4);Assert.Single(state.Plan(desired).ToRegister);Assert.Equal(new[]{C(4)},Sync(state,desired,CapturePurpose.Screenshot));Assert.Equal(HotkeyStatus.DuplicateBinding,state.StatusOf(CapturePurpose.Record));Assert.Equal(HotkeyStatus.DuplicateBinding,state.StatusOf(CapturePurpose.Annotate));}
+    [Fact] public void SuspendReturnsOnlyRegisteredAndPreservesBindings()
+    {
+        var state=new HotkeyRegistrationState();Sync(state,D(a:null),CapturePurpose.Record);
+        Assert.Equal(new[]{CapturePurpose.Screenshot},state.Suspend());
+        Assert.Equal(HotkeyStatus.Suspended,state.StatusOf(CapturePurpose.Screenshot));
+        Assert.Equal(HotkeyStatus.InUseByAnotherApp,state.StatusOf(CapturePurpose.Record));
+        Assert.Equal(HotkeyStatus.Unbound,state.StatusOf(CapturePurpose.Annotate));
+        Assert.Equal(C(4),state.ChordOf(CapturePurpose.Screenshot));Assert.Empty(state.Suspend());
+    }
+    [Fact] public void ResumeUnchangedChordsReRegistersSilently()
+    {
+        var state=new HotkeyRegistrationState();Sync(state,D(a:null),CapturePurpose.Record);state.Suspend();
+        var plan=state.Plan(D(a:null));Assert.Empty(plan.ToUnregister);
+        Assert.Equal(new[]{(CapturePurpose.Screenshot,C(4)),(CapturePurpose.Record,C(5))},plan.ToRegister);
+        Assert.Empty(Sync(state,D(a:null)));Assert.Equal(HotkeyStatus.Registered,state.StatusOf(CapturePurpose.Screenshot));Assert.Equal(HotkeyStatus.Registered,state.StatusOf(CapturePurpose.Record));
+        state.Suspend();Assert.Empty(Sync(state,D(a:null),CapturePurpose.Screenshot));Assert.Equal(HotkeyStatus.InUseByAnotherApp,state.StatusOf(CapturePurpose.Screenshot));
+    }
+    [Fact] public void ResumeChangedChordNotifiesItsFailure()
+    {
+        var state=new HotkeyRegistrationState();Sync(state);state.Suspend();var desired=D(7);var plan=state.Plan(desired);
+        Assert.Empty(plan.ToUnregister);Assert.Contains((CapturePurpose.Screenshot,C(7)),plan.ToRegister);
+        Assert.Equal(new[]{C(7)},Sync(state,desired,CapturePurpose.Screenshot));
+    }
+    [Fact] public void ResumeClearedChordBecomesUnbound()
+    {
+        var state=new HotkeyRegistrationState();Sync(state);state.Suspend();var desired=D(s:null);var plan=state.Plan(desired);
+        Assert.Empty(plan.ToUnregister);Assert.DoesNotContain(plan.ToRegister,x=>x.Purpose==CapturePurpose.Screenshot);
+        Sync(state,desired);Assert.Equal(HotkeyStatus.Unbound,state.StatusOf(CapturePurpose.Screenshot));Assert.Null(state.ChordOf(CapturePurpose.Screenshot));
+    }
+    [Fact] public void SuspensionLeavesDuplicateStatusUnchanged()
+    {var state=new HotkeyRegistrationState();Sync(state,D(4,4,6));Assert.Equal(new[]{CapturePurpose.Screenshot,CapturePurpose.Annotate},state.Suspend());Assert.Equal(HotkeyStatus.DuplicateBinding,state.StatusOf(CapturePurpose.Record));}
 }

@@ -2,7 +2,7 @@ using Snapper.Core.Support;
 
 namespace Snapper.Core.App;
 
-public enum HotkeyStatus { Unbound, Registered, InUseByAnotherApp, DuplicateBinding }
+public enum HotkeyStatus { Unbound, Registered, InUseByAnotherApp, DuplicateBinding, Suspended }
 public sealed record HotkeySyncPlan(IReadOnlyList<CapturePurpose> ToUnregister,
     IReadOnlyList<(CapturePurpose Purpose, KeyChord Chord)> ToRegister);
 
@@ -21,6 +21,13 @@ public sealed class HotkeyRegistrationState
     { 1 => CapturePurpose.Screenshot, 2 => CapturePurpose.Record, 3 => CapturePurpose.Annotate, _ => null };
     public HotkeyStatus StatusOf(CapturePurpose p) => statuses.GetValueOrDefault(p, HotkeyStatus.Unbound);
     public KeyChord? ChordOf(CapturePurpose p) => chords.GetValueOrDefault(p);
+
+    public IReadOnlyList<CapturePurpose> Suspend()
+    {
+        var registered = CapturePurposes.All.Where(p => StatusOf(p) == HotkeyStatus.Registered).ToArray();
+        foreach (var p in registered) statuses[p] = HotkeyStatus.Suspended;
+        return registered;
+    }
 
     public HotkeySyncPlan Plan(IReadOnlyDictionary<CapturePurpose, KeyChord?> desired)
     {
