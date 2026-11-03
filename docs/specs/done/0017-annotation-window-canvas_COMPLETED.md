@@ -129,7 +129,7 @@ and 45° angles), switch tools with V/R/A, and open several such windows at once
     - Rectangle: outline only, stroked path centered on the shape rect, miter join, color from
       `RGBAColor` → `CGColor` (sRGB).
     - Arrow: shaft from start to the arrowhead base (so the shaft never pokes through the tip),
-      round line cap at the start; arrowhead = filled triangle using 0015's arrowhead geometry
+      butt line cap at the start (matching 0015’s shared arrow geometry and bounds); arrowhead = filled triangle using 0015's arrowhead geometry
       (scales with stroke width per §8.2).
     - Text shapes are skipped here; 0019 adds text drawing.
   - Selection handles are **not** drawn here (they're UI only, 0018), so export never contains them.
@@ -217,8 +217,9 @@ and 45° angles), switch tools with V/R/A, and open several such windows at once
 ### Project
 
 - New files go under `Snapper/Annotate/` and `SnapperTests/`; run `xcodegen generate`.
-- No PRD change in this spec. Decisions 1–3 and 9 above interpret existing PRD text; if the user
-  confirms them, the coordinator may record them in docs/PRD.md §8.1.
+- Record the approved capture/placement/no-upscale/drag rules in PRD §8.1–8.2. Reconcile the
+  renderer’s shaft cap with 0015’s butt-capped shared geometry; rendering, bounds and hit-testing
+  must agree. Rectangle is initially selected as specified above.
 
 ## Acceptance criteria
 
@@ -363,3 +364,45 @@ and 45° angles), switch tools with V/R/A, and open several such windows at once
 - Shape model, constraints, arrowhead geometry, hit-testing — **0015**; document/undo/dirty — **0016**.
 - Capture itself, shutter sound, alerts — **0008**; window mode/hit-testing — **0009**.
 - Zoom controls (pinch, ⌘+/⌘−) — not in the PRD.
+
+## Verification status
+
+- Implemented on 2026-11-03. `xcodegen generate` succeeded.
+- `xcodebuild -scheme Snapper -configuration Debug build`: **BUILD SUCCEEDED**.
+- `xcodebuild -scheme Snapper test`: **TEST SUCCEEDED**, 319 tests in 50 suites.
+- Added five test suites covering canvas conversion/letterboxing/degenerate inputs, screen sizing
+  and cascading, tool routing, drawing gestures and atomic completion, and CoreGraphics rendering.
+  An asymmetric raster verifies top/bottom/left orientation; rectangle pixel assertions verify
+  image-space alignment and native-scale stroke widths.
+- The renderer uses 0015's butt-capped shaft geometry so pixels, bounds and hit-testing agree;
+  corrected the isolated round-cap phrase above. Approved placement, capture-output, no-upscale,
+  default-tool and image-confinement rules are recorded in PRD §8.1–8.2. AGENTS lists the new pure
+  geometry/gesture logic. No dependency, signing or activation-policy changes.
+- GUI behavior has **not** been run. Select editing, Text, export and close/quit prompts remain
+  with 0018–0020, as scoped above.
+
+Manual verification (all pending, real GUI session with Screen Recording permission):
+
+- [ ] Not yet run by user: from another frontmost app, ⌘⇧6 rectangle capture opens a key editor,
+  correctly titled; shutter plays when enabled; no file or clipboard write occurs.
+- [ ] Not yet run by user: disable shutter sound and set screenshot destination to Save to file;
+  annotation capture stays silent and still writes no file.
+- [ ] Not yet run by user: Space/window capture of a partly covered window shows only that window,
+  without shadow, covering content or Snapper overlays.
+- [ ] Not yet run by user: near-full-screen capture opens centered at about 80% of visible screen,
+  preserving image aspect ratio.
+- [ ] Not yet run by user: a small capture opens at minimum window size, image at natural size
+  centered in neutral margins.
+- [ ] Not yet run by user: capture on a secondary display, including mixed scales and negative
+  origins; editor appears on that display with correct size and strokes.
+- [ ] Not yet run by user: open three editors; coincident frames cascade, each document is
+  independent, and closing one leaves the others working.
+- [ ] Not yet run by user: Rectangle draws the current outline (red/M initially); Shift makes a
+  square and changes the preview without pointer movement; the tool stays selected.
+- [ ] Not yet run by user: A draws filled-head arrows and Shift snaps angles; V/R update toolbar;
+  Text is disabled and T does nothing; clicks create no shape.
+- [ ] Not yet run by user: margins cannot start a shape; dragging outside clamps to image edges,
+  including constrained squares/arrows.
+- [ ] Not yet run by user: resizing scales shapes and image together; enlarging beyond natural
+  size leaves a centered image at 100%.
+- [ ] Not yet run by user: Snapper retains no Dock icon and does not appear in ⌘Tab.

@@ -109,10 +109,11 @@ All three shortcuts can be changed in Settings.
 ## 8. Feature: Annotate (⌘⇧6)
 
 ### 8.1 Capture and window
-- The capture works exactly as in section 6, but instead of being saved or copied, the image opens in a new **annotation window**.
+- The capture works exactly as in section 6, including the shutter-sound preference, but instead of being saved or copied, the image opens in a new **annotation window**. The screenshot destination setting is ignored.
 - The annotation window:
   - is a normal, resizable window with a toolbar on top;
-  - initially scales the image to fit about 80% of the screen and never upscales it;
+  - initially scales the image to fit about 80% of the capture display’s visible frame (falling back to the main display if needed), allowing for window chrome;
+  - never upscales the image, including on resize: excess space becomes centered neutral margins;
   - can be open in several copies at once.
 - Closing a window with changes that have not been saved or copied asks **"Discard changes?"**.
 - Quitting Snapper while one or more annotation windows have unsaved changes asks once: **"Quit and discard N unsaved annotations?"**.
@@ -131,9 +132,11 @@ All three shortcuts can be changed in Settings.
 | Undo / Redo | ⌘Z / ⇧⌘Z | Covers every edit, including moves, resizes, color changes, and text edits |
 | Delete | ⌫ | Deletes the selected shape |
 
-- The active tool **stays selected** after each shape is drawn.
+- The active tool **stays selected** after each shape is drawn. New editors initially select Rectangle.
+- Drawing starts only inside the image; drag endpoints stay within image bounds, including with Shift constraints.
 - Rectangle drags with either dimension below 3 view points and arrow drags shorter than 3 view points create no shape, at any zoom.
 - Rectangles are selected only near their outline (within half the stroke width plus 4 view points); their empty interior is not a hit.
+- Arrows use a butt-capped shaft ending at the base of the filled head, matching the geometry used for bounds and hit-testing.
 - Arrowhead length is 3 × stroke width + 8 image points, and its width is 80% of that length. For shorter arrows, clamp the head length to the arrow length and its width to 80% of that.
 - The last-used color is remembered between sessions. The initial default is **red**.
 - The last-used stroke width is remembered between sessions. The initial default is **M**.

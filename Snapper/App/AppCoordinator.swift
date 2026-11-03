@@ -6,11 +6,11 @@ import os
 final class AppCoordinator: NSObject {
     let settings = AppSettings()
     private let logger = Logger(subsystem: "com.thera-engineering.snapper", category: "AppMode")
-    private let selectionLogger = Logger(subsystem: "com.thera-engineering.snapper", category: "selection")
     private let overlay = SelectionOverlayController()
     private let capturer = ScreenshotCapturer()
     private let shutterSound = ShutterSound()
     private let screenshotLogger = Logger(subsystem: "com.thera-engineering.snapper", category: "screenshot")
+    private lazy var annotationWindowManager = AnnotationWindowManager(settings: settings)
     private lazy var settingsModel = SettingsModel(settings: settings)
     private lazy var settingsWindowController = SettingsWindowController(model: settingsModel)
     private lazy var onboardingWindowController = OnboardingWindowController(settings: settings)
@@ -74,24 +74,7 @@ final class AppCoordinator: NSObject {
                 startRecording(result, startDate: startDate)
                 return
             }
-            switch result {
-            case .rect(let display, let rect):
-                selectionLogger.info("Selection for \(purpose.rawValue, privacy: .public): display \(display.displayID), rect \(String(describing: rect), privacy: .public)")
-                if purpose == .screenshot {
-                    let region = DisplayGeometry.captureRegion(for: rect, on: display)
-                    guard region.pixelSize.width > 0, region.pixelSize.height > 0 else { return }
-                    await takeScreenshot { try await self.capturer.capture(region, pixelsPerPoint: display.backingScale) }
-                } else if purpose == .annotate {
-                    selectionLogger.info("Annotate not implemented yet")
-                }
-            case .window(let windowID, _, _):
-                selectionLogger.info("Window selection for \(purpose.rawValue, privacy: .public): \(windowID)")
-                if purpose == .screenshot {
-                    await takeScreenshot { try await self.capturer.captureWindowImage(windowID: windowID) }
-                } else if purpose == .annotate {
-                    selectionLogger.info("Annotate not implemented yet")
-                }
-            }
+            await takeScreenshot(purpose: purpose, selection: result, captureDate: startDate)
         }
     }
 
@@ -200,11 +183,21 @@ final class AppCoordinator: NSObject {
         return .terminateNow
     }
 
-    private func takeScreenshot(capture: @MainActor () async throws -> CapturedImage) async {
-        let captureDate = Date()
+    private func capture(_ selection: SelectionResult) async throws -> CapturedImage {
+        switch selection {
+        case .rect(let display, let rect):
+            let region = DisplayGeometry.captureRegion(for: rect, on: display)
+            guard region.pixelSize.width > 0, region.pixelSize.height > 0 else { throw ScreenshotCaptureError.displayUnavailable }
+            return try await capturer.capture(region, pixelsPerPoint: display.backingScale)
+        case .window(let id, _, _):
+            return try await capturer.captureWindowImage(windowID: id)
+        }
+    }
+
+    private func takeScreenshot(purpose: CapturePurpose, selection: SelectionResult, captureDate: Date) async {
         let image: CapturedImage
         do {
-            image = try await capture()
+            image = try await capture(selection)
         } catch {
             screenshotLogger.error("Capture failed: \(error.localizedDescription, privacy: .public)")
             if CaptureFailure(error) == .permissionDenied { showOnboarding() }
@@ -212,6 +205,14 @@ final class AppCoordinator: NSObject {
             return
         }
         if settings.playShutterSound { shutterSound.play() }
+        if purpose == .annotate {
+            let displayID: CGDirectDisplayID
+            switch selection {
+            case .rect(let display, _), .window(_, _, let display): displayID = display.displayID
+            }
+            annotationWindowManager.open(image, displayID: displayID, captureDate: captureDate)
+            return
+        }
         let png: Data
         do {
             png = try await Task.detached(priority: .userInitiated) {
