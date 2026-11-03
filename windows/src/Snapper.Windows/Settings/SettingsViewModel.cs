@@ -74,6 +74,14 @@ internal sealed class SettingsViewModel : INotifyPropertyChanged, IDisposable
         Refresh();
     }
     public void RefreshOnActivate() { ReadLaunchAtLogin(); ReconcileMicrophone(); }
+    public IReadOnlyList<(Mp4Quality Value, string Title)> Mp4QualityOptions => RecordingSettingsPresentation.Mp4QualityOptions;
+    public string Mp4HighTitle => Mp4QualityOptions[0].Title;
+    public string Mp4MediumTitle => Mp4QualityOptions[1].Title;
+    public string Mp4LowTitle => Mp4QualityOptions[2].Title;
+    public string Mp4QualityCaption => RecordingSettingsPresentation.Mp4QualityCaption;
+    public bool Mp4High { get => settings.Mp4Quality == Mp4Quality.High; set { if (value) settings.Mp4Quality = Mp4Quality.High; } }
+    public bool Mp4Medium { get => settings.Mp4Quality == Mp4Quality.Medium; set { if (value) settings.Mp4Quality = Mp4Quality.Medium; } }
+    public bool Mp4Low { get => settings.Mp4Quality == Mp4Quality.Low; set { if (value) settings.Mp4Quality = Mp4Quality.Low; } }
     public bool RecordMicrophone
     {
         get => microphoneRequest.IsPending && microphoneRequest.WantsMicrophone || settings.RecordMicrophone;

@@ -1,8 +1,9 @@
 using Snapper.Core.Geometry;
 namespace Snapper.Core.Recording;
 
-public sealed record RecordingFailure(string Message)
+public sealed record RecordingFailure(string Message, string Title = "Couldn't record the screen")
 {
+    public static RecordingFailure Compression(string message) => new(message, "Couldn't compress the recording");
     public static readonly RecordingFailure Timeout = new("The recording didn't finish saving in time.");
     public static readonly RecordingFailure NoFrames = new("The screen didn't send any frames.");
 }
@@ -12,13 +13,16 @@ public abstract record RecordingPhase
     public sealed record Starting : RecordingPhase;
     public sealed record Recording : RecordingPhase;
     public sealed record Stopping : RecordingPhase;
+    public sealed record Converting : RecordingPhase;
     public sealed record Finished(string Path) : RecordingPhase;
     public sealed record Failed(RecordingFailure Failure) : RecordingPhase;
     public sealed record Cancelled : RecordingPhase;
 }
 public abstract record RecordingEvent
 {
-    public sealed record Start(string Path) : RecordingEvent;
+    public sealed record Start(string Path, bool Converts = false) : RecordingEvent;
+    public sealed record ConversionFinished(string FinalPath) : RecordingEvent;
+    public sealed record ConversionFailed(RecordingFailure Failure, string? SavedOriginal) : RecordingEvent;
     public sealed record CaptureStarted : RecordingEvent;
     public sealed record CaptureFailedToStart(RecordingFailure Failure) : RecordingEvent;
     public sealed record StopRequested : RecordingEvent;
@@ -37,6 +41,9 @@ public abstract record RecordingEffect
     public sealed record Reveal(string Path) : RecordingEffect;
     public sealed record DeleteFile(string Path) : RecordingEffect;
     public sealed record ShowError(RecordingFailure Failure) : RecordingEffect;
+    public sealed record ReleaseCapture : RecordingEffect;
+    public sealed record Convert(string Path) : RecordingEffect;
+    public sealed record SaveOriginal(string Path) : RecordingEffect;
     public sealed record Ended : RecordingEffect;
 }
 public sealed class RecordingLifecycle
@@ -44,7 +51,8 @@ public sealed class RecordingLifecycle
     public static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(30), StartTimeout = TimeSpan.FromSeconds(5);
     public RecordingPhase Phase { get; private set; } = new RecordingPhase.Idle();
     private string? path;
-    private bool pendingStop, pendingCancel;
+    private bool pendingStop, pendingCancel, converts;
+    public bool IsConverting => Phase is RecordingPhase.Converting;
     private RecordingFailure? streamFailure;
     public static bool IsRecordedDisplayGone(string recordedId, IEnumerable<string> currentIds) => !currentIds.Contains(recordedId);
     public static bool IsRecordedDisplayChanged(DisplayInfo start, IEnumerable<DisplayInfo> current)
@@ -55,8 +63,8 @@ public sealed class RecordingLifecycle
     public IReadOnlyList<RecordingEffect> Handle(RecordingEvent e)
     {
         if (Phase is RecordingPhase.Finished or RecordingPhase.Failed or RecordingPhase.Cancelled) return [];
-        if (Phase is RecordingPhase.Idle && e is RecordingEvent.Start(var output))
-        { path = output; Phase = new RecordingPhase.Starting(); return [new RecordingEffect.StartCapture()]; }
+        if (Phase is RecordingPhase.Idle && e is RecordingEvent.Start(var output, var convert))
+        { path = output; converts = convert; Phase = new RecordingPhase.Starting(); return [new RecordingEffect.StartCapture()]; }
         if (path is null) return [];
         switch (Phase, e)
         {
@@ -76,16 +84,24 @@ public sealed class RecordingLifecycle
             case (RecordingPhase.Recording, RecordingEvent.StreamStopped):
                 Phase = new RecordingPhase.Stopping(); return [new RecordingEffect.ScheduleStopTimeout()];
             case (RecordingPhase.Recording, RecordingEvent.OutputFinished):
+                if (converts) { Phase = new RecordingPhase.Converting(); return [new RecordingEffect.StopCapture(), new RecordingEffect.ReleaseCapture(), new RecordingEffect.Convert(path)]; }
                 Phase = new RecordingPhase.Finished(path);
                 return [new RecordingEffect.StopCapture(), new RecordingEffect.Reveal(path), new RecordingEffect.Ended()];
             case (RecordingPhase.Stopping, RecordingEvent.OutputFinished):
                 if (streamFailure is { } f) return ResolveFailure(f, true, path);
+                if (converts && !pendingCancel) { Phase = new RecordingPhase.Converting(); return [new RecordingEffect.ReleaseCapture(), new RecordingEffect.Convert(path)]; }
                 Phase = pendingCancel ? new RecordingPhase.Cancelled() : new RecordingPhase.Finished(path);
                 return [pendingCancel ? new RecordingEffect.DeleteFile(path) : new RecordingEffect.Reveal(path), new RecordingEffect.Ended()];
             case (RecordingPhase.Recording, RecordingEvent.OutputFailed(var failure, var content)):
                 return new RecordingEffect[] { new RecordingEffect.StopCapture() }.Concat(ResolveFailure(failure, content, path)).ToArray();
             case (RecordingPhase.Stopping, RecordingEvent.OutputFailed(var failure, var content)): return ResolveFailure(failure, content, path);
             case (RecordingPhase.Stopping, RecordingEvent.StopTimedOut(var content)): return ResolveFailure(streamFailure ?? RecordingFailure.Timeout, content, path);
+            case (RecordingPhase.Converting, RecordingEvent.ConversionFinished(var final)):
+                Phase = new RecordingPhase.Finished(final);
+                return [new RecordingEffect.DeleteFile(path), new RecordingEffect.Reveal(final), new RecordingEffect.Ended()];
+            case (RecordingPhase.Converting, RecordingEvent.ConversionFailed(var failure, var saved)):
+                Phase = saved is not null ? new RecordingPhase.Finished(saved) : new RecordingPhase.Failed(failure);
+                return [saved is not null ? new RecordingEffect.Reveal(saved) : new RecordingEffect.DeleteFile(path), new RecordingEffect.ShowError(failure), new RecordingEffect.Ended()];
             default: return [];
         }
     }
@@ -93,6 +109,6 @@ public sealed class RecordingLifecycle
     {
         if (pendingCancel) { Phase = new RecordingPhase.Cancelled(); return [new RecordingEffect.DeleteFile(output), new RecordingEffect.Ended()]; }
         Phase = content ? new RecordingPhase.Finished(output) : new RecordingPhase.Failed(failure);
-        return [content ? new RecordingEffect.Reveal(output) : new RecordingEffect.DeleteFile(output), new RecordingEffect.ShowError(failure), new RecordingEffect.Ended()];
+        return [content ? converts ? new RecordingEffect.SaveOriginal(output) : new RecordingEffect.Reveal(output) : new RecordingEffect.DeleteFile(output), new RecordingEffect.ShowError(failure), new RecordingEffect.Ended()];
     }
 }

@@ -31,6 +31,8 @@ internal sealed class AppCoordinator : IDisposable
     private bool disposed;
     private bool confirmingExit;
     private RecordingSession? recording;
+    private Task recovery = Task.CompletedTask;
+    private bool preparingRecording, stopPreparedRecording, cancelPreparedRecording;
     private RecordingOverlayController? recordingOverlay;
     private WindowFrameTracker? windowTracker;
     private readonly RecordingTerminationDecision termination = new();
@@ -58,6 +60,7 @@ internal sealed class AppCoordinator : IDisposable
     public void Start()
     {
         if (tray is not null) return;
+        recovery = RecordingRecovery.RecoverAsync(Settings.SaveFolder);
         shutdownBlocker = new ShutdownBlocker(OnQueryEndSession, OnEndSession);
         tray = new TrayIconController(this);
         hotkeys = new HotkeyManager();
@@ -111,9 +114,17 @@ internal sealed class AppCoordinator : IDisposable
             Send(new AppModeEvent.SelectionCancelled());
         }
     }
-    private void BeginRecording(SelectionResult selection)
+    private async void BeginRecording(SelectionResult selection)
     {
+        preparingRecording = true;
+        stopPreparedRecording = cancelPreparedRecording = false;
+        tray?.SetRecording(true);
+        shutdownBlocker?.SetReason(RecordingTerminationDecision.ShutdownBlockReason);
         var startDate = DateTimeOffset.Now;
+        var exportSettings = new RecordingExportSettings(Settings.RecordingFormat, Settings.Mp4Quality, Settings.GifQuality);
+        var saveFolder = Settings.SaveFolder;
+        await recovery;
+        if (disposed) return;
         DisplayInfo display;
         RecordingConfiguration configuration;
         WindowRecordingSource? window = null;
@@ -139,14 +150,22 @@ internal sealed class AppCoordinator : IDisposable
                 default: throw new UnreachableException();
             }
             string path;
-            try { path = RecordingFilePath.Reserve(Settings.SaveFolder, startDate); }
+            var plan = exportSettings.Plan(configuration.PixelWidth, configuration.PixelHeight, configuration.Scale);
+            try
+            {
+                path = await Task.Run(() => plan.Converts ? RecordingOutputFiles.Propose(saveFolder, startDate) : RecordingFilePath.Reserve(saveFolder, startDate));
+            }
             catch (Exception error) when (ScreenshotOutputPlan.ClassifySaveFailure(error) == SaveFailureAlert.SaveFolder)
             {
-                Send(new AppModeEvent.RecordingEnded());
-                ErrorAlerts.ShowSaveFolderFailure(Settings.SaveFolder, error, Settings);
+                ErrorAlerts.ShowSaveFolderFailure(saveFolder, error, Settings);
+                RecordingEnded();
                 return;
             }
-            // 0045/0046: format and quality are deliberately MP4 High until export conversion lands.
+            if (disposed)
+            {
+                if (!plan.Converts) RecordingOutputFiles.TryDelete(path);
+                return;
+            }
             recording = new RecordingSession(configuration, display, path, d3d, Displays, Settings,
                 onStarted: () =>
                 {
@@ -161,19 +180,19 @@ internal sealed class AppCoordinator : IDisposable
                         windowTracker = new WindowFrameTracker(new HWND(window.Handle), window.ThreadId, window.ExtendedFrame, WindowTrackingChanged);
                         windowTracker.Start();
                     }
-                }, onStopping: DismissRecordingOverlay, onEnded: RecordingEnded, window: window);
+                }, onStopping: DismissRecordingOverlay, onEnded: RecordingEnded, exportSettings: exportSettings, startDate: startDate, window: window);
             tray?.SetRecording(true);
             shutdownBlocker?.SetReason(RecordingTerminationDecision.ShutdownBlockReason);
+            preparingRecording = false;
             recording.Start();
+            if (cancelPreparedRecording) recording.Cancel(); else if (stopPreparedRecording) recording.Stop();
         }
         catch (Exception error)
         {
             Debug.WriteLine($"Snapper: Starting recording: {error}");
             DismissRecordingOverlay();
-            recording = null;
-            Send(new AppModeEvent.RecordingEnded());
-            tray?.SetRecording(false); shutdownBlocker?.SetReason(null);
             ErrorAlerts.ShowError("Couldn't record the screen", error.Message);
+            RecordingEnded();
         }
     }
     private void WindowTrackingChanged(WindowTrackingEvent e)
@@ -203,10 +222,21 @@ internal sealed class AppCoordinator : IDisposable
         recordingOverlay?.Dismiss();
         recordingOverlay = null;
     }
-    public void StopRecording() { DismissRecordingOverlay(); recording?.Stop(); }
-    public void CancelRecording() { DismissRecordingOverlay(); recording?.Cancel(); }
+    public void StopRecording()
+    {
+        DismissRecordingOverlay();
+        if (preparingRecording && recording is null) stopPreparedRecording = true;
+        recording?.Stop();
+    }
+    public void CancelRecording()
+    {
+        DismissRecordingOverlay();
+        if (preparingRecording && recording is null) cancelPreparedRecording = true;
+        recording?.Cancel();
+    }
     private void RecordingEnded()
     {
+        preparingRecording = false;
         DismissRecordingOverlay();
         recording = null;
         Send(new AppModeEvent.RecordingEnded());
@@ -215,7 +245,7 @@ internal sealed class AppCoordinator : IDisposable
     }
     private bool OnQueryEndSession()
     {
-        if (recording is null) return true;
+        if (recording is null && !preparingRecording) return true;
         // Session end is controlled by Windows, not the explicit Exit confirmation. A cancelled
         // sign-out must keep dirty editors intact after the recording finishes saving.
         StopRecording(); return false;
@@ -224,8 +254,8 @@ internal sealed class AppCoordinator : IDisposable
     {
         annotations.PrepareForSessionEnd();
         if (recording is null) return;
-        StopRecording();
-        recording.WaitForWriter(TimeSpan.FromSeconds(5));
+        DismissRecordingOverlay();
+        recording.ForceSessionEnd();
     }
 
     private async Task TakeScreenshot(SelectionResult selection)
@@ -320,7 +350,7 @@ internal sealed class AppCoordinator : IDisposable
         if (UnsavedAnnotationsPolicy.QuitDecisionFor(annotations.DirtyWindowCount) is QuitDecision.Confirm(var message) &&
             !AnnotationPrompts.ConfirmExit(message)) { confirmingExit = false; return; }
         await annotations.CloseAllWithoutPromptAsync();
-        if (termination.Request(recording is not null)) { StopRecording(); return; }
+        if (termination.Request(recording is not null || preparingRecording)) { StopRecording(); return; }
         FinishExit();
     }
     private void FinishExit()

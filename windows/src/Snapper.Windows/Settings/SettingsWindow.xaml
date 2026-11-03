@@ -32,6 +32,11 @@
         </TabItem>
         <TabItem Header="Recording" Tag="{x:Static core:SettingsTab.Recording}">
             <StackPanel Margin="16">
+                <TextBlock Text="MP4 quality" FontWeight="SemiBold" Margin="0,0,0,5" />
+                <RadioButton Content="{Binding Mp4HighTitle}" IsChecked="{Binding Mp4High}" Margin="0,3" GroupName="Mp4Quality" />
+                <RadioButton Content="{Binding Mp4MediumTitle}" IsChecked="{Binding Mp4Medium}" Margin="0,3" GroupName="Mp4Quality" />
+                <RadioButton Content="{Binding Mp4LowTitle}" IsChecked="{Binding Mp4Low}" Margin="0,3" GroupName="Mp4Quality" />
+                <TextBlock Text="{Binding Mp4QualityCaption}" Foreground="Gray" TextWrapping="Wrap" Margin="0,5,0,20" />
                 <CheckBox Content="Record microphone" IsChecked="{Binding RecordMicrophone}" />
                 <StackPanel Margin="0,8,0,0" Visibility="{Binding ShowsMicrophoneDenied, Converter={StaticResource BoolVisibility}}">
                     <TextBlock Text="Snapper doesn't have access to the microphone." Foreground="Gray" TextWrapping="Wrap" />
