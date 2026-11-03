@@ -46,6 +46,7 @@ internal sealed partial class AnnotationWindow : Window
         CanvasHost.Children.Add(Canvas);
         styleState = new(new(settings.AnnotationColor, settings.AnnotationStrokeWidth));
         BuildToolbar(); RefreshStyle(); CurrentTool = AnnotationTools.DefaultTool;
+        Document.Changed += DocumentChanged;
         PreviewKeyDown += KeyDownPreview; PreviewKeyUp += KeyUpPreview;
         Deactivated += WindowDeactivated; Closed += WindowClosed;
     }
@@ -55,7 +56,7 @@ internal sealed partial class AnnotationWindow : Window
         {
             var button = new RadioButton { GroupName = "AnnotationTools", Style = (Style)FindResource("ToolButton"),
                 Content = Glyph(descriptor.Glyph, descriptor.GlyphRotation), ToolTip = descriptor.ToolTip,
-                IsEnabled = descriptor.Tool != AnnotationTool.Text, Focusable = false };
+                IsEnabled = descriptor.Tool != AnnotationTool.Text, Focusable = false, IsTabStop = false };
             AutomationProperties.SetName(button, descriptor.Label);
             button.Click += (_, _) => { CurrentTool = descriptor.Tool; FocusCanvas(); };
             tools.Add(descriptor.Tool, button); ToolsPanel.Children.Add(button);
@@ -66,13 +67,13 @@ internal sealed partial class AnnotationWindow : Window
             var color = preset.Color();
             var ring = new Border { BorderThickness = new Thickness(2), CornerRadius = new CornerRadius(12), Padding = new Thickness(2),
                 Child = new Ellipse { Width = 16, Height = 16, Fill = ShapeRenderer.Brush(color), Stroke = SystemColors.ControlDarkBrush, StrokeThickness = 1 } };
-            var button = new Button { Content = ring, ToolTip = preset.DisplayName(), Focusable = false, Padding = new Thickness(0), BorderThickness = new Thickness(0), Background = Brushes.Transparent };
+            var button = new Button { Content = ring, ToolTip = preset.DisplayName(), Focusable = false, Padding = new Thickness(0), BorderThickness = new Thickness(0), Background = Brushes.Transparent, IsTabStop = false };
             AutomationProperties.SetName(button, preset.DisplayName());
             button.Click += (_, _) => Pick(new ToolbarStyleEvent.ColorPicked(color));
             swatches.Add(ring); ToolsPanel.Children.Add(button);
         }
         var customRing = new Border { BorderThickness = new Thickness(2), Padding = new Thickness(2), CornerRadius = new CornerRadius(4), Child = Glyph(AnnotationToolbarLayout.CustomColorGlyph) };
-        var custom = new Button { Content = customRing, ToolTip = AnnotationToolbarLayout.CustomColorToolTip, Focusable = false, Padding = new Thickness(0), BorderThickness = new Thickness(0), Background = Brushes.Transparent };
+        var custom = new Button { Content = customRing, ToolTip = AnnotationToolbarLayout.CustomColorToolTip, Focusable = false, Padding = new Thickness(0), BorderThickness = new Thickness(0), Background = Brushes.Transparent, IsTabStop = false };
         AutomationProperties.SetName(custom, AnnotationToolbarLayout.CustomColorToolTip);
         custom.Click += (_, _) => PickCustomColor();
         swatches.Add(customRing); ToolsPanel.Children.Add(custom);
@@ -81,7 +82,7 @@ internal sealed partial class AnnotationWindow : Window
         {
             var index = (int)width;
             var button = new RadioButton { GroupName = "AnnotationWidths", Style = (Style)FindResource("ToolButton"),
-                Content = AnnotationToolbarLayout.StrokeLabels[index], ToolTip = AnnotationToolbarLayout.StrokeToolTips[index], Focusable = false };
+                Content = AnnotationToolbarLayout.StrokeLabels[index], ToolTip = AnnotationToolbarLayout.StrokeToolTips[index], Focusable = false, IsTabStop = false };
             AutomationProperties.SetName(button, AnnotationToolbarLayout.StrokeToolTips[index]);
             button.Click += (_, _) => Pick(new ToolbarStyleEvent.StrokeWidthPicked(width));
             widths.Add(width, button); ToolsPanel.Children.Add(button);
@@ -95,12 +96,15 @@ internal sealed partial class AnnotationWindow : Window
     {
         if (Canvas.IsDragging) { RefreshStyle(); return; }
         var effects = styleState.Reduce(e);
+        Canvas.Editor.ApplyStyle(effects, (shape, width) => shape.WithStrokeWidth(width));
         if (effects.PersistColor is { } color) settings.AnnotationColor = color;
         if (effects.PersistStrokeWidth is { } width) settings.AnnotationStrokeWidth = width;
         RefreshStyle(); FocusCanvas();
     }
+    private void DocumentChanged(object? sender, EventArgs args) => RefreshStyle();
     private void RefreshStyle()
     {
+        styleState.Reduce(new ToolbarStyleEvent.SelectedShapeStyleChanged(Document.SelectedShape?.Style()));
         Canvas.CurrentColor = styleState.CurrentStyle.Color; Canvas.CurrentStrokeWidth = styleState.CurrentStyle.StrokeWidth;
         var selected = styleState.SwatchSelection is SwatchSelection.Preset(var index) ? index : 8;
         for (var i = 0; i < swatches.Count; i++) swatches[i].BorderBrush = i == selected ? SystemColors.HighlightBrush : Brushes.Transparent;
@@ -115,10 +119,17 @@ internal sealed partial class AnnotationWindow : Window
     }
     private void KeyDownPreview(object sender, KeyEventArgs e)
     {
+        if (Keyboard.FocusedElement is TextBoxBase) return; // 0042 supplies text editing routing.
         var key = e.Key == Key.System ? e.SystemKey : e.Key;
         var modifiers = Keyboard.Modifiers;
+        var coreModifiers = KeyModifiers.None;
+        if (modifiers.HasFlag(ModifierKeys.Control)) coreModifiers |= KeyModifiers.Ctrl;
+        if (modifiers.HasFlag(ModifierKeys.Alt)) coreModifiers |= KeyModifiers.Alt;
+        if (modifiers.HasFlag(ModifierKeys.Shift)) coreModifiers |= KeyModifiers.Shift;
+        if (modifiers.HasFlag(ModifierKeys.Windows)) coreModifiers |= KeyModifiers.Win;
+        if (CanvasKeyMap.Map(KeyInterop.VirtualKeyFromKey(key), coreModifiers) is { } command)
+        { e.Handled = Canvas.Execute(command); return; }
         if (key == Key.W && modifiers == ModifierKeys.Control) { Close(); e.Handled = true; return; }
-        if (key == Key.Escape) { Canvas.AbortDrag(); e.Handled = true; return; }
         if (key is Key.LeftShift or Key.RightShift && Canvas.IsDragging) { Canvas.RefreshPreview(); return; }
         var letter = key switch { Key.V => "v", Key.R => "r", Key.A => "a", Key.T => "t", _ => "" };
         if (AnnotationTools.ForShortcut(letter, (modifiers & (ModifierKeys.Control | ModifierKeys.Alt | ModifierKeys.Windows)) != 0, false) is { } tool)
@@ -132,6 +143,7 @@ internal sealed partial class AnnotationWindow : Window
     {
         CaptureExclusion.Unregister(new HWND(Handle));
         PreviewKeyDown -= KeyDownPreview; PreviewKeyUp -= KeyUpPreview; Deactivated -= WindowDeactivated; Closed -= WindowClosed;
+        Document.Changed -= DocumentChanged;
         Canvas.Dispose(); CanvasHost.Children.Clear(); Content = null;
     }
     public unsafe void Place(DisplayInfo display, IReadOnlyCollection<PixelPoint> existingOrigins)

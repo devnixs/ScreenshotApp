@@ -4,7 +4,7 @@
         ResizeMode="CanResize" ShowInTaskbar="True" WindowStartupLocation="Manual" UseLayoutRounding="True">
     <Window.Resources>
         <Style x:Key="ToolButton" TargetType="RadioButton">
-            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Focusable" Value="False"/><Setter Property="IsTabStop" Value="False"/>
             <Setter Property="Width" Value="28"/><Setter Property="Height" Value="28"/>
             <Setter Property="Margin" Value="2"/>
             <Setter Property="Template">
@@ -23,7 +23,7 @@
     </Window.Resources>
     <DockPanel>
         <Border DockPanel.Dock="Top" Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}" BorderBrush="{DynamicResource {x:Static SystemColors.ControlDarkBrushKey}}" BorderThickness="0,0,0,1">
-            <DockPanel x:Name="ToolbarRow" Margin="6,3" LastChildFill="False">
+            <DockPanel Focusable="False" FocusManager.IsFocusScope="False" KeyboardNavigation.TabNavigation="None" x:Name="ToolbarRow" Margin="6,3" LastChildFill="False">
                 <StackPanel x:Name="ActionsPanel" DockPanel.Dock="Right" Orientation="Horizontal"/>
                 <StackPanel x:Name="ToolsPanel" Orientation="Horizontal"/>
             </DockPanel>

@@ -333,3 +333,34 @@ No PRD update is needed. The design decisions and hover cursors are UI details b
 - Text placement, editing and re-edit, double-click handling, the measured text stroke-width change, and key routing while a text box is edited: **0042**.
 - Export, Ctrl+S, Ctrl+C, Ctrl+W, "Discard changes?", the quit confirmation, and the shutdown block reason: **0043**. Copy & Close (Ctrl+Enter): **0044**.
 - Marquee or multi-selection, copy/paste or duplication of shapes, arrow-key nudging, z-order changes, a right-click context menu, and live color preview. None of these are in PRD §8.2.
+
+## Verification status
+
+Automated verification on 2026-11-03: `dotnet build windows/Snapper.slnx -c Debug` passed with **0 warnings and 0 errors**. `dotnet test windows/Snapper.slnx` passed **1,119 tests**, including **50 new cases**, with no failures or skips. Logs: `/tmp/snapper-0041-build.log` and `/tmp/snapper-0041-test.log`.
+
+Implemented the Core hit tester, Windows command map, cursor decisions, and `SelectionEditor`, plus WPF preview/commit, selection adornments, keyboard routing and toolbar style integration. Existing `ShapeDragSession` and `ToolbarStyleState` were reused. The shared `ShapeRenderer` remains free of selection adornments. No packages, native APIs, PRD or AGENTS.md changes were needed.
+
+GUI behavior has not been verified. Run the following on Windows 11, preferably with 100% and 150% monitors:
+
+- [ ] not yet run by user: Capture an annotation and draw two overlapping rectangles and an arrow; new shapes have no selection handles.
+- [ ] not yet run by user: Select rectangle outlines and arrow bodies; verify four corner/two endpoint handles, and deselection from empty rectangle interiors.
+- [ ] not yet run by user: Click overlapping outlines and verify the last-drawn shape wins.
+- [ ] not yet run by user: Verify move, diagonal resize, endpoint hand, and empty-canvas arrow hover cursors.
+- [ ] not yet run by user: Move a shape and verify Ctrl+Z, Ctrl+Y and Ctrl+Shift+Z undo/redo it.
+- [ ] not yet run by user: Resize from all four rectangle corners; verify fixed opposite corners and one undo step per resize.
+- [ ] not yet run by user: Resize with Shift, then release Shift without moving; verify square/free previews and 45-degree arrow endpoint snapping.
+- [ ] not yet run by user: Drag outside the window onto another monitor, release, and verify grabbed-point clamping and one-step undo.
+- [ ] not yet run by user: Alt+Tab during a drag; verify original geometry returns, no edit commits, and selection remains.
+- [ ] not yet run by user: Press Esc during a drag and with/without a selection; verify abort/deselection and that the window stays open.
+- [ ] not yet run by user: Click a shape without moving; verify no new undo/dirty step. Once 0043 exists, a fresh unchanged editor closes without a discard prompt.
+- [ ] not yet run by user: Delete a selection with Delete and Backspace, undoing each deletion.
+- [ ] not yet run by user: Click toolbar controls then use Backspace, Space and Enter; verify canvas commands work and controls do not reactivate.
+- [ ] not yet run by user: Recolor a selected red shape blue and undo/redo the pick.
+- [ ] not yet run by user: Pick a custom color through "+"; verify one undo step and the custom swatch highlight.
+- [ ] not yet run by user: Change a selected shape to L and undo the stroke change.
+- [ ] not yet run by user: Select shapes with different styles, then deselect; verify the toolbar follows selection and returns to the last explicitly picked style.
+- [ ] not yet run by user: With nothing selected, pick yellow/S and draw; verify the new shape uses that style and is not selected.
+- [ ] not yet run by user: Switch from Select to R, draw, and undo; verify no selection handles appear outside Select.
+- [ ] not yet run by user: Move/resize the editor between 100% and 150% monitors; verify handle size, grab radius, and crispness.
+- [ ] not yet run by user: Edit two windows independently; verify separate selections, drags, histories and current styles.
+- [ ] not yet run by user: Once 0043 exists, export with a selection and verify no selection adornments appear in output.
