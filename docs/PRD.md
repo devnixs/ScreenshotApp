@@ -90,7 +90,7 @@ All three shortcuts can be changed in Settings.
 
 1. The user selects a rectangle or a window (section 5). Recording **starts immediately**, with no countdown.
    - **Window mode** records only that window. The capture follows the window as it moves, and anything covering it is excluded.
-2. **Output format:** `.mp4`, H.264, native resolution, 30 fps, cursor visible. Source bounds snap to the display pixel grid; each output dimension rounds down to an even pixel count for H.264, without rescaling.
+2. **Output format:** `.mp4`, H.264, native resolution, 30 fps, cursor visible. Source bounds snap to the display pixel grid; each output dimension rounds down to an even pixel count for H.264, without rescaling rectangle captures. Window recordings use the starting content size × its ScreenCaptureKit pixel scale, rounded to whole pixels and then down to even dimensions (minimum 2 × 2). Their output dimensions remain fixed; resizing the window or moving it to a display with a different scale fits the content into that frame while preserving its aspect ratio, with letterboxing as needed.
    - Audio: the microphone is recorded only if the *Record microphone* setting is on (off by default). System audio is never recorded. If microphone permission is missing or no input device exists at recording start, record video only without prompting or showing an alert.
 3. **Recording overlay** (excluded from the recording):
    - A floating pill below the recorded area, or above it if there is no room below. If there is no room above either (for example, a full-screen selection), it is placed inside the area, near its bottom edge. It shows `elapsed time · Stop · Cancel` and stays on the recorded area's display.

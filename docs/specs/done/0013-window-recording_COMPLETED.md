@@ -5,7 +5,7 @@
 
 ## Context
 
-Nothing is implemented yet. This spec builds on types introduced by lower-numbered specs:
+This spec builds on types introduced by lower-numbered specs:
 
 - `DisplayInfo` and the AppKit ↔ CG conversions in `Snapper/Capture/DisplayGeometry.swift` (0004).
 - `SelectionResult.window` and `WindowCandidate` (`Snapper/Capture/WindowHitTester.swift`) from 0009. A window selection carries the `CGWindowID` and the window's frame. 0009 also defines the "display with the largest overlap" rule that picks a window's display.
@@ -44,7 +44,7 @@ As a Snapper user, I press ⌘⇧5, press Space, and click a window. Snapper rec
     - `.unavailable` → `.unchanged`.
     - `.gone` → `.closed`, and `isClosed` becomes `true`.
     - `.present(bounds, onscreen)`: convert `bounds` from CG top-left to AppKit bottom-left **using `DisplayGeometry`** (0004). Don't write the conversion inline.
-      - `onscreen == false` while visible → `.hidden` (see Open question 1).
+      - `onscreen == false` while visible → `.hidden` (recording continues; hide only the border).
       - `onscreen == true` while hidden → `.shown(frame)`.
       - visible and the frame differs from `state.appKitFrame` → `.moved(frame)`.
       - Otherwise → `.unchanged`.
@@ -65,11 +65,11 @@ As a Snapper user, I press ⌘⇧5, press Space, and click a window. Snapper rec
   4. Remove 0011's interim "window frame as a rect" path for recordings. 0011's display-filter path for rectangle selections is unchanged.
 - **Wiring in `AppCoordinator`** (extend 0011/0012). For a window recording, create a `WindowFrameTracker` once the stream has started:
   - `.moved(rect)` and `.shown(rect)`: call the overlay's `update(recordedRect:)` with the new frame and the largest-overlap display. If 0012's `update(recordedRect:)` doesn't take a display, extend it to `update(recordedRect:on: DisplayInfo)` so the pill re-places itself with `RecordingPillPlacement` against the window's **current** display. Show the border and pill again on `.shown`.
-  - `.hidden`: follow the recommendation in Open question 1 until the user answers it. Recording continues, the border is hidden, and the pill stays at its last position so Stop and Cancel stay reachable.
+  - `.hidden`: follow the approved hidden-window behavior. Recording continues, the border is hidden, and the pill stays at its last position so Stop and Cancel stay reachable.
   - `.closed`: run exactly the same path as Stop (stop the stream, finalize the file, reveal it in Finder with `NSWorkspace.activateFileViewerSelecting`, restore the `camera.viewfinder` icon).
   - The tracker is stopped on every exit path: Stop, ⌘⇧5, the menu bar icon, Cancel, window closed, and errors.
 - **Stream stops with an error in window mode.** If `SCStreamDelegate.stream(_:didStopWithError:)` fires during a window recording, hop to the main actor and poll the window once synchronously through the parser. If the result is `.gone`, treat it as `.closed` (stop and save, no alert). Otherwise, follow 0011's error path (the alert from §7.3). The stop path must be **idempotent**: if the tracker and the delegate both report the closure, only one save and one Finder reveal happen. Guard on the session state, for example a `RecordingSession` that is already stopping ignores a second stop.
-- **Display disconnects in window mode.** 0011 stops and saves when the *recorded display* disconnects. A window recording has no recorded display, because macOS moves the window to a remaining display and the tracker follows it. During window recordings, 0011's display-disconnect stop is therefore skipped, and the window tracker alone decides. See Open question 2.
+- **Display disconnects in window mode.** 0011 stops and saves when the *recorded display* disconnects. A window recording has no recorded display, because macOS moves the window to a remaining display and the tracker follows it. During window recordings, 0011's display-disconnect stop is therefore skipped, and the window tracker alone decides. This matches the approved display-disconnection behavior in the PRD.
 - **`project.yml`**: no changes to targets or keys. Run `xcodegen generate` after adding the new source and test files.
 
 ## Acceptance criteria
@@ -93,7 +93,7 @@ As a Snapper user, I press ⌘⇧5, press Space, and click a window. Snapper rec
 - **The window closes before the stream starts:** a short error alert appears, and the app returns to idle without leaving a file behind.
 - **A transient `nil` from `CGWindowListCopyWindowInfo`:** this is `.unavailable` → `.unchanged`. It never counts as a close.
 - **The tracker and the stream delegate both detect the close:** one save and one reveal only.
-- **Minimized window, window on another Space, or app hidden** (`kCGWindowIsOnscreen == false`): `.hidden`, handled as described in Open question 1. It never counts as a close.
+- **Minimized window, window on another Space, or app hidden** (`kCGWindowIsOnscreen == false`): `.hidden`, recording continues with the border hidden and pill reachable. It never counts as a close.
 - **A very large window** (for example, a 5K full-size window at 2×): apply 0011's encoder size cap, if it has one, with the aspect ratio preserved.
 - **The recorded window belongs to an app that quits:** the window disappears from the list → `.closed` → stop and save.
 - **Cancel during a window recording:** the tracker stops and the file is discarded, as in 0012.
@@ -132,8 +132,10 @@ As a Snapper user, I press ⌘⇧5, press Space, and click a window. Snapper rec
   6. Start a window recording and quit the window's app (⌘Q). **Expected:** same as step 5.
   7. Start a window recording and press ⌘⇧5. **Expected:** it is saved and revealed. Repeat, clicking the menu bar icon. **Expected:** same. Repeat, clicking Cancel. **Expected:** no file is saved, and the overlay disappears.
   8. Start a window recording and resize the window larger and smaller. **Expected:** the recording continues, the border and pill track the new frame, and the video shows the window scaled to fit inside the original frame, with bars where the aspect ratio differs.
-  9. Start a window recording and minimize the window (⌘M), wait, then restore it from the Dock. **Expected (pending Open question 1):** the recording keeps going, the border is hidden while the window is minimized and reappears on restore, and the pill stays usable throughout.
-  10. Regression: a rectangle recording (⌘⇧5, drag) still works as in 0011/0012.
+  9. Start a window recording and minimize the window (⌘M), wait, then restore it from the Dock. **Expected:** the recording keeps going, the border is hidden while the window is minimized and reappears on restore, and the pill stays usable throughout.
+  10. With two displays: start recording a window on the external display, then disconnect that display. **Expected:** recording continues as macOS moves the window to the remaining display, with a reachable pill and following border. Repeat with a rectangle recording on that display. **Expected:** the rectangle recording stops and saves.
+  11. Hide and unhide the recorded app, switch Spaces, and move the window off-screen and back where possible. **Expected:** recording continues, the border hides while the window is absent, and the pill remains reachable at its last position (clamped to a remaining display if necessary); the border returns with the window.
+  12. Regression: a rectangle recording (⌘⇧5, drag) still works as in 0011/0012.
 
 ## Open questions
 
@@ -147,3 +149,28 @@ None. User confirmed on 2026-11-03: Minimized, hidden, or off-screen windows kee
 - The microphone track: 0014. Window recordings inherit whatever audio configuration 0011/0014 apply.
 - Changing the output size mid-recording, or restarting the stream on resize. This isn't possible within one H.264 track, as decided above.
 - Recording several windows, or a whole app: not in the PRD.
+
+## Verification status
+
+Automated verification on 2026-11-03:
+- `xcodegen generate`: passed.
+- `xcodebuild -scheme Snapper -configuration Debug build`: **BUILD SUCCEEDED**.
+- `xcodebuild -scheme Snapper test`: **TEST SUCCEEDED**, 248 tests in 42 suites passed.
+- Added pure tests for window output dimensions/flags (including global-clip exclusion), dictionary parsing, tracking transitions/jitter/transient failure, negative display origins, largest-overlap choice and no-overlap fallback, full-window borders, hidden-pill reachability, window-stream errors, and duplicate closure finalization.
+- Rectangle stream-stop behavior is retained; unexpected window-stream errors report the error after writer finalization, while a missing window takes the normal Stop path.
+
+Manual verification requires a GUI session with Screen Recording permission. None of these checks were run by the agent:
+- [ ] not yet run by user — Select a TextEdit window for recording; confirm immediate start, red menu icon, border, and pill.
+- [ ] not yet run by user — Move the window; confirm the overlay follows within about 0.25 s and the pill uses below/above/inside placement.
+- [ ] not yet run by user — Cover the recorded window, then Stop; inspect the revealed video for only that window, no shadow/covering window/controls, cursor, 30 fps, and starting native even pixel dimensions.
+- [ ] not yet run by user — Move between 1× and 2× displays; confirm uninterrupted framed content and overlay relocation using largest overlap, including spanning displays.
+- [ ] not yet run by user — Close the recorded window; confirm one saved playable file, one Finder reveal, dismissed controls, and restored menu icon.
+- [ ] not yet run by user — Quit the recorded app; confirm the same normal save behavior.
+- [ ] not yet run by user — Verify pill Stop, ⌘⇧5, and menu-bar Stop save; Cancel discards and removes the controls.
+- [ ] not yet run by user — Resize larger/smaller and change aspect ratio; confirm fixed output dimensions with proportional scaling and letterboxing.
+- [ ] not yet run by user — Minimize and restore; confirm recording continues with only the border hidden and a reachable pill, then restores the border.
+- [ ] not yet run by user — Disconnect the window's display; confirm recording follows it to a remaining display. Repeat for a rectangle and confirm it stops/saves.
+- [ ] not yet run by user — Hide/unhide the app, switch Spaces, and move off-screen/back; confirm recording continues with the border hidden while absent and pill reachable at its last position (clamped after display loss).
+- [ ] not yet run by user — Verify rectangle recording behavior remains unchanged.
+
+Rebuilding with a different signature can reset Screen Recording permission; check permission first if capture is blank or fails.

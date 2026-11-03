@@ -18,6 +18,7 @@ final class AppCoordinator: NSObject {
     private var modeMachine = AppModeMachine()
     private var recordingSession: RecordingSession?
     private var recordingOverlay: RecordingOverlayController?
+    private var windowFrameTracker: WindowFrameTracker?
     private var termination = RecordingTerminationDecision()
 
     var mode: AppMode { modeMachine.mode }
@@ -97,12 +98,17 @@ final class AppCoordinator: NSObject {
     private func startRecording(_ selection: SelectionResult, startDate: Date) {
         let display: DisplayInfo
         let rect: CGRect
+        let source: RecordingSource
+        let followsWindow: Bool
         switch selection {
         case .rect(let selectedDisplay, let selectedRect):
             display = selectedDisplay
             rect = selectedRect
-        case .window(_, let frame, let selectedDisplay):
-            // 0013: replace this fixed display rectangle with a following window filter.
+            followsWindow = false
+            source = .rectangle(RecordingConfigurationBuilder.build(display: display, selection: rect))
+        case .window(let id, let frame, let selectedDisplay):
+            followsWindow = true
+            source = .window(id)
             display = selectedDisplay
             guard let height = DisplayGeometry.primaryHeight(in: DisplayInfo.allCurrent()) else {
                 send(.recordingEnded)
@@ -116,16 +122,23 @@ final class AppCoordinator: NSObject {
             _ = try folder.prepareForWriting()
             let url = try folder.uniqueFileURL(for: .recording, date: startDate)
             let session = RecordingSession(
-                configuration: RecordingConfigurationBuilder.build(display: display, selection: rect), outputURL: url,
+                source: source, outputURL: url,
                 showOnboarding: { [weak self] in self?.showOnboarding() },
                 onStarted: { [weak self] in
                     guard let self else { return }
-                    // RecordingSession's application exclusion also covers these later-created windows.
-                    let overlay = RecordingOverlayController(display: display, recordedRect: rect, startedAt: .now,
+                    // Both the app-excluding display filter and the single-window filter exclude these controls.
+                    let overlay = RecordingOverlayController(display: display, recordedRect: rect, followsWindow: followsWindow, startedAt: .now,
                         onStop: { [weak self] in self?.stopRecording() },
                         onCancel: { [weak self] in self?.cancelRecording() })
                     self.recordingOverlay = overlay
                     overlay.show()
+                    if case .window(let id) = source {
+                        let tracker = WindowFrameTracker(windowID: id, initialFrame: rect) { [weak self] event in
+                            self?.handleWindowTracking(event)
+                        }
+                        self.windowFrameTracker = tracker
+                        tracker.start()
+                    }
                 },
                 onStopping: { [weak self] in self?.dismissRecordingOverlay() },
                 onEnded: { [weak self] in self?.recordingEnded() })
@@ -138,7 +151,25 @@ final class AppCoordinator: NSObject {
         }
     }
 
+    private func handleWindowTracking(_ event: WindowTrackingEvent) {
+        switch event {
+        case .moved(let rect), .shown(let rect):
+            let displays = DisplayInfo.allCurrent()
+            guard let display = DisplayGeometry.display(overlapping: rect, in: displays) else {
+                recordingOverlay?.setBorderVisible(false)
+                return
+            }
+            recordingOverlay?.update(recordedRect: rect, on: display)
+            recordingOverlay?.setBorderVisible(true)
+        case .hidden: recordingOverlay?.setBorderVisible(false)
+        case .closed: stopRecording()
+        case .unchanged: break
+        }
+    }
+
     private func dismissRecordingOverlay() {
+        windowFrameTracker?.stop()
+        windowFrameTracker = nil
         recordingOverlay?.dismiss()
         recordingOverlay = nil
     }

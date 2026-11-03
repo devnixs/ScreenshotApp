@@ -84,4 +84,25 @@ struct RecordingConfigurationBuilderTests {
         #expect(!result.showsCursor)
         #expect(result.minimumFrameInterval == CMTime(value: 1, timescale: 60))
     }
+    @Test func windowNativeSizeAndFixedFrameFlags() {
+        let samples: [(CGSize, CGFloat, Int, Int)] = [
+            (CGSize(width: 800, height: 600), 1, 800, 600),
+            (CGSize(width: 800, height: 600), 2, 1600, 1200),
+            (CGSize(width: 801, height: 601), 1, 800, 600),
+            (CGSize(width: 400.5, height: 300.25), 2, 800, 600),
+            (CGSize(width: 1, height: 1), 1, 2, 2),
+            (CGSize(width: 5120, height: 2880), 2, 10240, 5760)
+        ]
+        for (size, scale, width, height) in samples {
+            let result = RecordingConfigurationBuilder.buildWindow(contentSize: size, pointPixelScale: scale)
+            #expect(result.pixelWidth == width)
+            #expect(result.pixelHeight == height)
+            #expect(result.scalesToFit)
+            #expect(result.preservesAspectRatio)
+            #expect(result.ignoresShadowsSingleWindow)
+            #expect(result.ignoresGlobalClipSingleWindow)
+            #expect(result.showsCursor)
+            #expect(result.frameRate == 30)
+        }
+    }
 }

@@ -65,4 +65,14 @@ struct RecordingPillPlacementTests {
         let result = RecordingPillPlacement.place(pillSize: CGSize(width: 260, height: 32), recordedRect: rect, visibleFrame: visible)
         #expect(result.frame.maxX == visible.maxX)
     }
+    @Test func hiddenPillStaysPutUntilDisplayLossMakesItUnreachable() {
+        let frame = CGRect(x: -900, y: 100, width: 200, height: 40)
+        let left = CGRect(x: -1000, y: 0, width: 1000, height: 900)
+        #expect(RecordingPillPlacement.reachableFrame(frame, in: left) == frame)
+        let remaining = CGRect(x: 0, y: 20, width: 1000, height: 880)
+        #expect(RecordingPillPlacement.reachableFrame(frame, in: remaining) ==
+            CGRect(x: 0, y: 100, width: 200, height: 40))
+        #expect(RecordingPillPlacement.reachableFrame(CGRect(x: 900, y: 1000, width: 200, height: 40), in: remaining) ==
+            CGRect(x: 800, y: 860, width: 200, height: 40))
+    }
 }

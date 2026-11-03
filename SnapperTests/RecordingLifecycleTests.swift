@@ -93,6 +93,32 @@ struct RecordingLifecycleTests {
         #expect(lifecycle.handle(.outputFinished) == [.reveal(url), .ended])
     }
 
+    @Test func windowStreamErrorReportsAfterFinalizing() {
+        var lifecycle = started()
+        #expect(lifecycle.handle(.windowStreamFailed(failure)) == [.scheduleStopTimeout])
+        #expect(lifecycle.handle(.stopRequested) == [])
+        #expect(lifecycle.handle(.windowStreamFailed(failure)) == [])
+        #expect(lifecycle.handle(.outputFinished) == [.reveal(url), .showError(failure), .ended])
+        #expect(lifecycle.handle(.outputFinished) == [])
+    }
+
+    @Test func duplicateWindowClosureSavesAndRevealsOnce() {
+        var lifecycle = started()
+        #expect(lifecycle.handle(.stopRequested) == [.stopCapture, .scheduleStopTimeout])
+        #expect(lifecycle.handle(.stopRequested) == [])
+        #expect(lifecycle.handle(.windowStreamFailed(failure)) == [])
+        #expect(lifecycle.handle(.outputFinished) == [.reveal(url), .ended])
+        #expect(lifecycle.handle(.stopRequested) == [])
+        #expect(lifecycle.handle(.outputFinished) == [])
+    }
+
+    @Test(arguments: [true, false]) func windowStreamTimeoutRetainsOriginalFailure(content: Bool) {
+        var lifecycle = started()
+        _ = lifecycle.handle(.windowStreamFailed(failure))
+        #expect(lifecycle.handle(.stopTimedOut(fileHasContent: content)) == [
+            content ? .reveal(url) : .deleteFile(url), .showError(failure), .ended])
+    }
+
     @Test(arguments: [true, false]) func timeoutPreservesOnlyContent(content: Bool) {
         var lifecycle = started()
         _ = lifecycle.handle(.stopRequested)

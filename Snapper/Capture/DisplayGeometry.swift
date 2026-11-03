@@ -31,6 +31,18 @@ struct CaptureRegion: Sendable, Equatable {
 
 /// Shared coordinate math. Inputs use finite points and display frames, and positive scales.
 enum DisplayGeometry {
+    /// Largest positive overlap, preserving display order for ties. Offscreen windows return nil.
+    static func display(overlapping rect: CGRect, in displays: [DisplayInfo]) -> DisplayInfo? {
+        var best: DisplayInfo?
+        var bestArea: CGFloat = 0
+        for display in displays {
+            let intersection = display.frame.intersection(rect)
+            let area = intersection.isNull ? 0 : intersection.width * intersection.height
+            if area > bestArea { best = display; bestArea = area }
+        }
+        return best
+    }
+
     static func primaryDisplay(in displays: [DisplayInfo]) -> DisplayInfo? {
         displays.first { $0.frame.origin == .zero } ?? displays.first
     }

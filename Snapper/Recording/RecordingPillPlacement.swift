@@ -9,6 +9,12 @@ enum RecordingPillPlacement {
     }
     static let defaultMargin: CGFloat = 8
 
+    static func reachableFrame(_ frame: CGRect, in visibleFrame: CGRect) -> CGRect {
+        CGRect(x: max(visibleFrame.minX, min(frame.minX, visibleFrame.maxX - frame.width)),
+               y: max(visibleFrame.minY, min(frame.minY, visibleFrame.maxY - frame.height)),
+               width: frame.width, height: frame.height)
+    }
+
     static func place(pillSize: CGSize, recordedRect: CGRect, visibleFrame: CGRect,
                       margin: CGFloat = defaultMargin) -> Result {
         let below = recordedRect.minY - margin - pillSize.height

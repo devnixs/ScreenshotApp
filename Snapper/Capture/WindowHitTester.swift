@@ -44,14 +44,9 @@ enum WindowDisplayRule {
     static func display(for windowFrame: CGRect, displays: [DisplayInfo],
                         primaryDisplayHeight: CGFloat) -> DisplayInfo? {
         let frames = displays.map { DisplayGeometry.cgRect(fromAppKit: $0.frame, primaryHeight: primaryDisplayHeight) }
+        let appKitFrame = DisplayGeometry.appKitRect(fromCG: windowFrame, primaryHeight: primaryDisplayHeight)
+        if let display = DisplayGeometry.display(overlapping: appKitFrame, in: displays) { return display }
         var bestIndex: Int?
-        var bestArea: CGFloat = 0
-        for (index, frame) in frames.enumerated() {
-            let intersection = frame.intersection(windowFrame)
-            let area = intersection.isNull ? 0 : intersection.width * intersection.height
-            if area > bestArea { bestIndex = index; bestArea = area }
-        }
-        if let bestIndex { return displays[bestIndex] }
         let centre = CGPoint(x: windowFrame.midX, y: windowFrame.midY)
         var bestDistance = CGFloat.infinity
         for (index, frame) in frames.enumerated() {

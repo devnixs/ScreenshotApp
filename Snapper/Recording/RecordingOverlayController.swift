@@ -2,8 +2,9 @@ import AppKit
 
 @MainActor
 final class RecordingOverlayController {
-    private let display: DisplayInfo
+    private var display: DisplayInfo
     private var recordedRect: CGRect
+    private let followsWindow: Bool
     private let startedAt: ContinuousClock.Instant
     private let onStop: @MainActor () -> Void
     private let onCancel: @MainActor () -> Void
@@ -13,10 +14,12 @@ final class RecordingOverlayController {
     private var screenObserver: NSObjectProtocol?
     private var elapsedText = "0:00"
     private var dismissed = false
+    private var borderVisible = true
 
-    init(display: DisplayInfo, recordedRect: CGRect, startedAt: ContinuousClock.Instant,
+    init(display: DisplayInfo, recordedRect: CGRect, followsWindow: Bool = false, startedAt: ContinuousClock.Instant,
          onStop: @escaping @MainActor () -> Void, onCancel: @escaping @MainActor () -> Void) {
         self.display = display
+        self.followsWindow = followsWindow
         self.recordedRect = recordedRect
         self.startedAt = startedAt
         self.onStop = onStop
@@ -30,7 +33,10 @@ final class RecordingOverlayController {
     }
 
     func show() {
-        guard !dismissed, border == nil, screen != nil else { return }
+        guard !dismissed, border == nil else { return }
+        // A window may have changed displays while the stream was starting.
+        refreshDisplay()
+        guard screen != nil else { return }
         border = RecordingBorderWindow()
         let pill = RecordingPillPanel()
         pill.onStop = { [weak self] in self?.finish(cancel: false) }
@@ -45,7 +51,7 @@ final class RecordingOverlayController {
         ) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
-                self.update(recordedRect: self.recordedRect)
+                self.refreshDisplay()
             }
         }
         timerTask = Task { @MainActor [weak self] in
@@ -57,13 +63,37 @@ final class RecordingOverlayController {
         }
     }
 
-    func update(recordedRect: CGRect) {
+    func setBorderVisible(_ visible: Bool) {
+        borderVisible = visible
+        if visible { border?.orderFrontRegardless() } else { border?.orderOut(nil) }
+    }
+
+    func update(recordedRect: CGRect, on display: DisplayInfo? = nil) {
+        if let display { self.display = display }
         self.recordedRect = recordedRect
         guard !dismissed, let screen, let pill else { return }
-        border?.update(frame: RecordingBorderGeometry.windowFrame(recordedRect: recordedRect, displayFrame: screen.frame))
+        // Window recordings can span displays; the border always encloses the whole window.
+        border?.update(frame: RecordingBorderGeometry.windowFrame(recordedRect: recordedRect,
+            displayFrame: screen.frame, followsWindow: followsWindow))
         let frame = RecordingPillPlacement.place(pillSize: pill.pillSize, recordedRect: recordedRect,
                                                  visibleFrame: screen.visibleFrame).frame
         pill.setFrame(frame, display: true)
+    }
+
+    private func refreshDisplay() {
+        if followsWindow {
+            let displays = DisplayInfo.allCurrent()
+            if let current = DisplayGeometry.display(overlapping: recordedRect, in: displays) {
+                display = current
+            } else if !displays.contains(where: { $0.displayID == display.displayID }), let fallback = displays.first {
+                display = fallback
+            }
+        }
+        if borderVisible { update(recordedRect: recordedRect) }
+        else if let pill, let screen {
+            // Keep the last pill position unless a display change makes it unreachable.
+            pill.setFrame(RecordingPillPlacement.reachableFrame(pill.frame, in: screen.visibleFrame), display: true)
+        }
     }
 
     func dismiss() {
@@ -85,7 +115,7 @@ final class RecordingOverlayController {
         guard text != elapsedText else { return }
         elapsedText = text
         pill?.setElapsedText(text)
-        update(recordedRect: recordedRect)
+        refreshDisplay()
     }
 
     private func finish(cancel: Bool) {

@@ -21,9 +21,14 @@ private final class RecordingDelegateProxy: NSObject, SCStreamDelegate, SCRecord
     }
 }
 
+enum RecordingSource {
+    case rectangle(RecordingConfiguration)
+    case window(CGWindowID)
+}
+
 @MainActor
 final class RecordingSession {
-    let configuration: RecordingConfiguration
+    let source: RecordingSource
     let outputURL: URL
     private let onEnded: @MainActor () -> Void
     private let onStarted: @MainActor () -> Void
@@ -40,11 +45,11 @@ final class RecordingSession {
         Task { @MainActor in self?.receive(callback) }
     }
 
-    init(configuration: RecordingConfiguration, outputURL: URL,
+    init(source: RecordingSource, outputURL: URL,
          showOnboarding: @escaping @MainActor () -> Void,
          onStarted: @escaping @MainActor () -> Void, onStopping: @escaping @MainActor () -> Void,
          onEnded: @escaping @MainActor () -> Void) {
-        self.configuration = configuration
+        self.source = source
         self.outputURL = outputURL
         self.showOnboarding = showOnboarding
         self.onEnded = onEnded
@@ -62,7 +67,11 @@ final class RecordingSession {
         switch callback {
         case .finished: send(.outputFinished)
         case .failed(let failure): send(.outputFailed(failure, fileHasContent: fileHasContent))
-        case .stopped(let failure): send(.streamStopped(failure))
+        case .stopped(let failure):
+            if case .window(let id) = source {
+                if WindowFrameTracker.poll(windowID: id) == .gone { stop() }
+                else { send(.windowStreamFailed(failure)) }
+            } else { send(.streamStopped(failure)) }
         }
     }
 
@@ -125,7 +134,7 @@ final class RecordingSession {
     private func startCapture() async {
         do {
             // An offscreen ordered window makes this menu-bar process discoverable even when
-            // selection windows are already closed. Never capture without app-level exclusion.
+            // selection windows are closed, so rectangle filters can exclude the whole app.
             let anchor = NSPanel(contentRect: CGRect(x: -100_000, y: -100_000, width: 1, height: 1),
                                  styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
             anchor.isReleasedWhenClosed = false
@@ -133,23 +142,44 @@ final class RecordingSession {
             anchor.orderFrontRegardless()
             defer { anchor.close() }
             let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
-            guard let display = content.displays.first(where: { $0.displayID == configuration.displayID }) else {
-                throw ScreenshotCaptureError.displayUnavailable
-            }
-            let ownApp = content.applications.first { $0.processID == getpid() }
-            guard let ownApp else {
-                throw RecordingFailure(message: "Couldn't exclude Snapper's recording controls from capture.", kind: .other)
-            }
-            let filter = SCContentFilter(display: display, excludingApplications: [ownApp], exceptingWindows: [])
+            let filter: SCContentFilter
             let config = SCStreamConfiguration()
-            config.sourceRect = configuration.sourceRect
-            config.width = configuration.pixelWidth
-            config.height = configuration.pixelHeight
-            config.minimumFrameInterval = configuration.minimumFrameInterval
-            config.pixelFormat = configuration.pixelFormat
-            config.queueDepth = configuration.queueDepth
-            config.showsCursor = configuration.showsCursor
-            config.scalesToFit = false
+            switch source {
+            case .rectangle(let configuration):
+                guard let display = content.displays.first(where: { $0.displayID == configuration.displayID }) else {
+                    throw ScreenshotCaptureError.displayUnavailable
+                }
+                guard let ownApp = content.applications.first(where: { $0.processID == getpid() }) else {
+                    throw RecordingFailure(message: "Couldn't exclude Snapper's recording controls from capture.", kind: .other)
+                }
+                filter = SCContentFilter(display: display, excludingApplications: [ownApp], exceptingWindows: [])
+                config.sourceRect = configuration.sourceRect
+                config.width = configuration.pixelWidth
+                config.height = configuration.pixelHeight
+                config.minimumFrameInterval = configuration.minimumFrameInterval
+                config.pixelFormat = configuration.pixelFormat
+                config.queueDepth = configuration.queueDepth
+                config.showsCursor = configuration.showsCursor
+                config.scalesToFit = false
+            case .window(let windowID):
+                guard let window = content.windows.first(where: { $0.windowID == windowID }) else {
+                    throw ScreenshotCaptureError.windowUnavailable
+                }
+                // Captures only this window: Snapper's pill and border are excluded by construction.
+                filter = SCContentFilter(desktopIndependentWindow: window)
+                let configuration = RecordingConfigurationBuilder.buildWindow(
+                    contentSize: filter.contentRect.size, pointPixelScale: CGFloat(filter.pointPixelScale))
+                config.width = configuration.pixelWidth
+                config.height = configuration.pixelHeight
+                config.scalesToFit = configuration.scalesToFit
+                config.preservesAspectRatio = configuration.preservesAspectRatio
+                config.ignoreShadowsSingleWindow = configuration.ignoresShadowsSingleWindow
+                config.ignoreGlobalClipSingleWindow = configuration.ignoresGlobalClipSingleWindow
+                config.showsCursor = configuration.showsCursor
+                config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(configuration.frameRate))
+                config.pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+                config.queueDepth = 5
+            }
             config.capturesAudio = false
             config.captureMicrophone = false
             let outputConfig = SCRecordingOutputConfiguration()
@@ -179,8 +209,8 @@ final class RecordingSession {
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
-                guard let self else { return }
-                if RecordingLifecycle.isRecordedDisplayGone(recorded: self.configuration.displayID,
+                guard let self, case .rectangle(let configuration) = self.source else { return }
+                if RecordingLifecycle.isRecordedDisplayGone(recorded: configuration.displayID,
                     current: DisplayInfo.allCurrent().map(\.displayID)) { self.stop() }
             }
         }
