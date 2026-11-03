@@ -7,6 +7,7 @@ using Snapper.Core.Recording;
 using Snapper.Windows.Recording;
 using System.ComponentModel;
 using Snapper.Core.App;
+using Snapper.Core.Annotate;
 using Snapper.Core.Support;
 using Snapper.Core.Capture;
 using Snapper.Windows.Interop;
@@ -28,6 +29,7 @@ internal sealed class AppCoordinator : IDisposable
     private readonly Dispatcher dispatcher = Dispatcher.CurrentDispatcher;
     private HotkeyManager? hotkeys;
     private bool disposed;
+    private bool confirmingExit;
     private RecordingSession? recording;
     private RecordingOverlayController? recordingOverlay;
     private WindowFrameTracker? windowTracker;
@@ -214,10 +216,13 @@ internal sealed class AppCoordinator : IDisposable
     private bool OnQueryEndSession()
     {
         if (recording is null) return true;
-        termination.Request(true); StopRecording(); return false;
+        // Session end is controlled by Windows, not the explicit Exit confirmation. A cancelled
+        // sign-out must keep dirty editors intact after the recording finishes saving.
+        StopRecording(); return false;
     }
     private void OnEndSession()
     {
+        annotations.PrepareForSessionEnd();
         if (recording is null) return;
         StopRecording();
         recording.WaitForWriter(TimeSpan.FromSeconds(5));
@@ -307,14 +312,20 @@ internal sealed class AppCoordinator : IDisposable
         settingsWindow.Show(tab);
     }
 
-    public void Exit()
+    public async void Exit()
     {
+        if (disposed || confirmingExit) return;
+        confirmingExit = true;
+        annotations.CommitAllTextEdits();
+        if (UnsavedAnnotationsPolicy.QuitDecisionFor(annotations.DirtyWindowCount) is QuitDecision.Confirm(var message) &&
+            !AnnotationPrompts.ConfirmExit(message)) { confirmingExit = false; return; }
+        await annotations.CloseAllWithoutPromptAsync();
         if (termination.Request(recording is not null)) { StopRecording(); return; }
         FinishExit();
     }
     private void FinishExit()
     {
-        annotations.CloseAll();
+        annotations.CloseAllWithoutPrompt();
         settingsWindow?.AllowClose();
         Dispose();
         Application.Current.Shutdown();
@@ -325,7 +336,7 @@ internal sealed class AppCoordinator : IDisposable
         if (disposed) return;
         disposed = true;
         DismissRecordingOverlay();
-        annotations.CloseAll();
+        annotations.CloseAllWithoutPrompt();
         settingsWindow?.Dispose();
         settingsWindow = null;
         Settings.PropertyChanged -= SettingsChanged;

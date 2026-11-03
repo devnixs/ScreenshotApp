@@ -38,7 +38,12 @@ internal sealed class ShutdownBlocker : IDisposable
     }
     private nint Message(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
     {
-        if (message == PInvoke.WM_QUERYENDSESSION) { handled = true; return canEndSession() ? 1 : 0; }
+        if (message == PInvoke.WM_QUERYENDSESSION)
+        {
+            handled = true;
+            var canEnd = canEndSession();
+            return canEnd || (lParam.ToInt64() & PInvoke.ENDSESSION_CRITICAL) != 0 ? 1 : 0;
+        }
         if (message == PInvoke.WM_ENDSESSION && wParam != 0) { handled = true; sessionEnding(); }
         return 0;
     }

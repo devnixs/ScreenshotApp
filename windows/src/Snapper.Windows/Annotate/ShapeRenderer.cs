@@ -10,14 +10,14 @@ namespace Snapper.Windows.Annotate;
 internal static class ShapeRenderer
 {
     public static void DrawImage(DrawingContext dc, BitmapSource image) => dc.DrawImage(image, new(0, 0, image.PixelWidth, image.PixelHeight));
-    public static void Draw(DrawingContext dc, IEnumerable<AnnotationShape> shapes, double pixelsPerDip)
-    { foreach (var shape in shapes) Draw(dc, shape, pixelsPerDip); }
-    public static void Draw(DrawingContext dc, AnnotationShape shape, double pixelsPerDip)
+    public static void Draw(DrawingContext dc, IEnumerable<AnnotationShape> shapes, double pixelsPerDip, double textPixelsPerDip = 1)
+    { foreach (var shape in shapes) Draw(dc, shape, pixelsPerDip, textPixelsPerDip); }
+    public static void Draw(DrawingContext dc, AnnotationShape shape, double pixelsPerDip, double textPixelsPerDip = 1)
     {
         if (shape.Kind is ShapeKind.Text(var box))
         {
             var size = TextMetrics.FontPixelSize(shape.StrokeWidth, pixelsPerDip);
-            var text = TextStyle.CreateFormattedText(box.Text, size, Brush(shape.Color));
+            var text = TextStyle.CreateFormattedText(box.Text, size, Brush(shape.Color), textPixelsPerDip);
             var glyphs = text.BuildGeometry(Point(box.Origin)); glyphs.Freeze();
             var outline = new Pen(Brush(ContrastingOutline.ColorFor(shape.Color)), 2 * ContrastingOutline.OutlineFractionOfFontSize * size) { LineJoin = PenLineJoin.Round };
             outline.Freeze();

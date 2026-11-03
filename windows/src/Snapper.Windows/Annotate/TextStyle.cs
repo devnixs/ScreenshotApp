@@ -8,9 +8,9 @@ namespace Snapper.Windows.Annotate;
 internal static class TextStyle
 {
     public static readonly Typeface Typeface = new(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal);
-    public static FormattedText CreateFormattedText(string modelText, double fontPixelSize, Brush brush) =>
+    public static FormattedText CreateFormattedText(string modelText, double fontPixelSize, Brush brush, double pixelsPerDip = 1) =>
         new(modelText, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, Typeface, fontPixelSize, brush,
-            null, TextFormattingMode.Ideal, 1.0);
+            null, TextFormattingMode.Ideal, pixelsPerDip);
     public static void ApplyTo(System.Windows.Controls.TextBox editor, double fontPixelSize, RgbaColor color)
     {
         editor.FontFamily = Typeface.FontFamily; editor.FontWeight = Typeface.Weight;

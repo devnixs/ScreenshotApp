@@ -97,7 +97,7 @@ before Exit Snapper throws away unsaved annotations, and Windows' shutdown scree
     `SessionEndDecision SessionEndDecisionFor(bool isDirtyAfterCommittingText, bool isCritical)`:
     `Block` only when dirty and not critical (`ENDSESSION_CRITICAL` can't be blocked).
   - Constants: `DiscardTitle = "Discard changes?"`, `DiscardButton = "Discard"`,
-    `QuitButton = "Quit"`, `CancelButton = "Cancel"`, `ShutdownBlockReason = "Unsaved annotations"`,
+    `QuitButton = "Exit"`, `CancelButton = "Cancel"`, `ShutdownBlockReason = "Unsaved annotations"`,
     `SaveFailedTitle(string folderPath) => $"Couldn't save to {folderPath}"` (full path, §13.5; reuse
     0026's `SaveFolderPolicy` message text if it already exposes exactly this),
     `CopyFailedTitle = "Couldn't copy to clipboard"`.
@@ -191,7 +191,7 @@ before Exit Snapper throws away unsaved annotations, and Windows' shutdown scree
   `document.MarkClean()`; window stays open; no sound. If flattening fails or the clipboard can't be
   opened (`Clipboard` returns false or throws `ExternalException`/`COMException`), show `ErrorAlerts`
   with `CopyFailedTitle` and the error, and the document stays dirty. Structure it as
-  `bool TryCopyFlattenedImage()` so 0044 can reuse it.
+  `Task<bool> TryCopyFlattenedImageAsync()` so 0044 can reuse it.
 - **Close** (`Window.Closing` handler; covers the title-bar X, Ctrl+W via `Close()`, Alt+F4, and
   the taskbar thumbnail's Close), port of `windowShouldClose` (`:193-209`):
   1. If `closeConfirmed` or `sessionEnding` is set, allow.
@@ -242,7 +242,7 @@ before Exit Snapper throws away unsaved annotations, and Windows' shutdown scree
 2. Save ignores *Screenshot destination* and *Play shutter sound* and doesn't reveal the file.
 3. If the default folder can't be created, the Save dialog still opens (default location), no alert.
 4. The dialog's chosen folder isn't remembered; each Save opens on the Settings folder.
-5. "Discard changes?" has Discard and Cancel only; the exit dialog has Quit and Cancel, counting
+5. "Discard changes?" has Discard and Cancel only; the exit dialog has Exit and Cancel, counting
    dirty **windows**, singular for 1.
 6. The toolbar buttons and Ctrl+S commit an in-progress text edit first; Ctrl+C while editing copies
    only text.
@@ -267,7 +267,7 @@ before Exit Snapper throws away unsaved annotations, and Windows' shutdown scree
 - [ ] Closing right after a Save or Copy with no further edits doesn't prompt; editing after a Copy
       makes it prompt again.
 - [ ] Exit Snapper with N ≥ 1 dirty windows shows exactly one dialog, "Exit and discard N unsaved
-      annotations?" (singular for 1). Quit exits; Cancel keeps everything. With 0 dirty windows,
+      annotations?" (singular for 1). Exit exits; Cancel keeps everything. With 0 dirty windows,
       Snapper exits without asking.
 - [ ] Signing out with a dirty annotation window shows no Snapper dialog; Windows' shutdown screen
       lists Snapper with "Unsaved annotations". Cancel keeps Snapper and the window intact.
@@ -295,7 +295,7 @@ before Exit Snapper throws away unsaved annotations, and Windows' shutdown scree
 - **Several windows from captures in the same second**: each suggests a unique name at dialog time.
 - **Clipboard locked by another app**: copy fails → "Couldn't copy to clipboard" alert, still dirty.
 - **Exit while a Save dialog or "Discard changes?" is open on a window**: the exit dialog still
-  appears; on Quit, Snapper exits without crashing or showing more prompts.
+  appears; on Exit, Snapper exits without crashing or showing more prompts.
 - **Exit while recording**: unreachable from the tray (a click stops the recording, §13.3); the
   ordering (annotations confirm first, then 0034's save) still holds for any other caller.
 - **Session end while recording and with dirty annotations**: both reasons ("Saving recording…" from
@@ -326,7 +326,7 @@ before Exit Snapper throws away unsaved annotations, and Windows' shutdown scree
     `ConfirmDiscard`. If the model can't satisfy the empty-text row, fix it in this spec.
   - `SessionEnd`: (dirty, not critical) → `Block`; (clean, not critical) → `Allow`; (dirty,
     critical) → `Allow`; `ShutdownBlockReason == "Unsaved annotations"`.
-  - `Strings`: `DiscardTitle == "Discard changes?"`, buttons "Discard"/"Quit"/"Cancel",
+  - `Strings`: `DiscardTitle == "Discard changes?"`, buttons "Discard"/"Exit"/"Cancel",
     `SaveFailedTitle(@"D:\Shots") == @"Couldn't save to D:\Shots"`,
     `CopyFailedTitle == "Couldn't copy to clipboard"`.
 - **Unit tests** — `windows/tests/Snapper.Core.Tests/AnnotationExportPlanTests.cs`:
@@ -366,7 +366,7 @@ before Exit Snapper throws away unsaved annotations, and Windows' shutdown scree
   4. Drag the annotation window to the 100% monitor and resize it very small. Ctrl+S again: the
      suggested name ends in ` (2)`; save; step 3's command shows the **same** pixel size, and the two
      files look identical in Paint.
-  5. Rename the Screenshots folder, press Ctrl+S: the folder is recreated and the dialog opens in
+  5. Rename the Screenshots folder, draw another shape, then press Ctrl+S: the folder is recreated and the dialog opens in
      it. Cancel; the window still prompts on close. Restore the folder.
   6. Press Ctrl+C (no text being edited). Paste into Paint: the canvas size in the status bar is the
      full pixel size and the shapes are there. Paste into Word or WordPad too (DIB path). The window
@@ -391,8 +391,25 @@ before Exit Snapper throws away unsaved annotations, and Windows' shutdown scree
       Windows' "Closing apps" screen lists Snapper with "Unsaved annotations". Click Cancel: Snapper
       and the window remain, and closing the window still asks "Discard changes?". Sign out again and
       choose Sign out anyway: the session ends. With only clean windows, sign-out isn't blocked.
-  14. Open a Save dialog on a dirty window, then Tray → Exit Snapper → Quit: Snapper exits without a
-      crash or extra prompts.
+  14. Open a Save dialog on a dirty window, then Tray → Exit Snapper → Exit: Snapper exits without a
+      crash or extra prompts. Repeat while a Discard changes? dialog is open; the original close
+      unwinds before app shutdown, without a second window prompt.
+
+  15. Capture a static asymmetric test image containing a one-pixel grid. Save and Copy with no
+      shapes at 100%, 150%, and 200% capture scale: orientation, pixel dimensions, grid alignment,
+      and original colors stay unchanged; export has no neutral canvas margins.
+  16. Draw rectangles and arrows near image edges at each capture scale. Confirm outline-only
+      interiors, stroke widths scaled with capture pixels, filled arrowheads, correct clipping at
+      the image edge, and no hover/selection adornments in Save or Copy.
+  17. Add outlined text and overlapping shapes. Export at large and small window sizes: text ink,
+      outlines, and back-to-front order match the canvas, without editing caret/selection chrome.
+  18. If another process holds the clipboard open, try Copy: the error title is "Couldn't copy to
+      clipboard", the editor stays open, and unsaved work still prompts on close.
+  19. With a very large image, Save or Copy and immediately edit while encoding finishes. Closing
+      still prompts for edits not included in that export; the new edits are not marked clean.
+  20. With a recording active and an unsaved annotation open, attempt sign-out then Cancel on
+      Windows' screen. After the recording saves, Snapper and the dirty editor remain open. Explicit
+      Exit still confirms annotations first and waits for the recording save before quitting.
 
 ## Out of scope
 
@@ -405,3 +422,49 @@ before Exit Snapper throws away unsaved annotations, and Windows' shutdown scree
 - Saving a recording on Exit or session end (0034).
 - JPEG or other formats (PRD §2), "Save As" format options.
 - The macOS app (spec 0020 already shipped it).
+
+## Verification status
+
+Automated verification on 2026-11-03: `dotnet build windows/Snapper.slnx -c Debug` passed with
+**0 warnings and 0 errors**. `dotnet test windows/Snapper.slnx` passed **1,234 tests**, with no
+failures or skips (59 new cases). Logs: `/tmp/snapper-0043-build.log` and
+`/tmp/snapper-0043-test.log`.
+
+Implementation notes:
+- Extended the existing `CanvasKeyMap` with export decisions instead of adding a parallel router.
+- Flattening uses the shared renderer on the dispatcher, with exact source pixels and a 96-DPI
+  render target; the reused PNG encoder retains capture-scale metadata. Frozen rasters encode
+  off-thread. Async Save/Copy only mark content clean when it still matches the exported snapshot.
+- Atomic output uses a unique sibling temporary file and replacement, preserving existing output
+  on failure and cleaning the temporary file. Portable real-file tests cover those paths.
+- `TryCopyFlattenedImageAsync()` is the reusable copy helper for 0044. Copy & Close must account for
+  an intervening edit while this async helper runs before deciding to close.
+- Nested Discard dialogs are dismissed before their original Closing handler completes; explicit
+  Exit awaits the windows' close completion before shutting down. OS session-end saving is kept
+  separate from explicit Exit, so cancelling sign-out retains unsaved editors after recording ends.
+- Corrected stale "Quit" button wording in this Windows spec to **Exit**, as required by the
+  authoritative PRD §13.2. PRD and AGENTS.md already describe the shipped behavior; neither changed.
+
+Windows GUI, clipboard, raster rendering, and session-end behavior have **not** been verified.
+Run the Test plan's full Windows 11 instructions, including:
+
+- [ ] not yet run by user: Capture on a 150% monitor and draw rectangle, arrow, and text, leaving a shape selected.
+- [ ] not yet run by user: Save opens an owner-modal dialog in the Settings folder with a name from capture time.
+- [ ] not yet run by user: Verify saved pixel dimensions, orientation, all shapes/text outlines, and no editing chrome.
+- [ ] not yet run by user: Move to 100% DPI and resize small; the next save suggests a collision suffix and preserves pixels.
+- [ ] not yet run by user: Recreate a missing default folder; after making an edit, cancelling Save retains dirty state.
+- [ ] not yet run by user: Copy pastes the full-resolution flattened PNG/DIB and leaves the editor open.
+- [ ] not yet run by user: Ctrl+C in text editing copies selected text and never falls back to the image with an empty selection.
+- [ ] not yet run by user: X, Ctrl+W, and Alt+F4 show one Discard/Cancel prompt and preserve edits on Cancel.
+- [ ] not yet run by user: Copy/Save clean checkpoints close without prompting; later edits prompt; empty text does not.
+- [ ] not yet run by user: Exit counts dirty windows once, uses singular/plural Windows wording, and respects Cancel.
+- [ ] not yet run by user: Save failure shows the full target folder, keeps work dirty, and leaves no temporary file.
+- [ ] not yet run by user: Toolbar order/glyphs/tooltips, active-text Copy, no sound, and no Explorer reveal match the spec.
+- [ ] not yet run by user: Dirty sign-out uses Windows' Unsaved annotations screen; Cancel retains work; critical/forced end has no Snapper prompt.
+- [ ] not yet run by user: Exit while a Save or Discard dialog is open closes cleanly without recursive prompts or a crash.
+- [ ] not yet run by user: No-shape exports preserve a static asymmetric one-pixel grid at 100%/150%/200% scale.
+- [ ] not yet run by user: Rectangle interiors/stroke scaling, arrowheads, image-edge clipping, and adornment exclusion are correct.
+- [ ] not yet run by user: Outlined text, overlapping shape order, and glyph placement are unchanged by window size.
+- [ ] not yet run by user: Clipboard failure shows the correct alert and leaves the document dirty.
+- [ ] not yet run by user: Edits made while asynchronous encoding finishes remain unsaved and prompt on close.
+- [ ] not yet run by user: Cancelling sign-out while recording plus dirty annotations saves recording and retains the editor; explicit Exit confirms annotations then saves recording.

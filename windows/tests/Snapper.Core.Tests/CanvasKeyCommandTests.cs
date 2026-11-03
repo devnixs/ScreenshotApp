@@ -22,4 +22,23 @@ public sealed class CanvasKeyCommandTests
         Assert.Null(CanvasKeyMap.Map(0x59, KeyModifiers.Ctrl | KeyModifiers.Shift));
         Assert.Null(CanvasKeyMap.Map(0x56, KeyModifiers.None));
     }
+    [Theory]
+    [InlineData(0x53, false, false, CanvasKeyCommand.Save)] [InlineData(0x53, true, false, CanvasKeyCommand.Save)]
+    [InlineData(0x53, false, true, CanvasKeyCommand.Refuse)] [InlineData(0x53, true, true, CanvasKeyCommand.Refuse)]
+    [InlineData(0x43, false, false, CanvasKeyCommand.CopyImage)] [InlineData(0x43, false, true, CanvasKeyCommand.Refuse)]
+    [InlineData(0x57, false, false, CanvasKeyCommand.Close)] [InlineData(0x57, true, false, CanvasKeyCommand.Close)]
+    [InlineData(0x57, false, true, CanvasKeyCommand.Close)]
+    public void ExactExportCommands(int key, bool editing, bool dragging, CanvasKeyCommand expected) =>
+        Assert.Equal(expected, CanvasKeyMap.ExportCommand(KeyChord.Create(KeyModifiers.Ctrl, key), editing, dragging));
+    [Theory] [InlineData(false)] [InlineData(true)]
+    public void TextCopyNeverFallsBackToImage(bool dragging) =>
+        Assert.Null(CanvasKeyMap.ExportCommand(KeyChord.Create(KeyModifiers.Ctrl, 0x43), true, dragging));
+    [Theory]
+    [InlineData(0x53, KeyModifiers.Ctrl | KeyModifiers.Shift)] [InlineData(0x43, KeyModifiers.Ctrl | KeyModifiers.Shift)]
+    [InlineData(0x57, KeyModifiers.Ctrl | KeyModifiers.Shift)] [InlineData(0x43, KeyModifiers.Ctrl | KeyModifiers.Alt)]
+    [InlineData(0x53, KeyModifiers.Alt)] [InlineData(0x53, KeyModifiers.Win)]
+    [InlineData(0x53, KeyModifiers.None)] [InlineData(0x43, KeyModifiers.None)] [InlineData(0x57, KeyModifiers.None)]
+    [InlineData(0x0D, KeyModifiers.Ctrl)]
+    public void OtherChordsDoNotExport(int key, KeyModifiers modifiers) =>
+        Assert.Null(CanvasKeyMap.ExportCommand(KeyChord.Create(modifiers, key), false, false));
 }

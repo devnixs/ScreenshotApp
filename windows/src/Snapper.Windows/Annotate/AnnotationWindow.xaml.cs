@@ -31,7 +31,8 @@ internal sealed partial class AnnotationWindow : Window
     public AnnotationDocument Document => Canvas.Document;
     public TextEditingController TextEditing { get; }
     public DateTime CaptureDate { get; }
-    public bool HasOpenDialog { get; private set; }
+    private bool hasOpenDialog;
+    public bool HasOpenDialog => hasOpenDialog || isPrompting || isExporting;
     public nint Handle => handle;
     public AnnotationTool CurrentTool
     {
@@ -50,9 +51,10 @@ internal sealed partial class AnnotationWindow : Window
         TextEditing = new(Canvas, editorLayer); Canvas.TextEditing = TextEditing;
         TextEditing.Changed += RefreshStyle;
         styleState = new(new(settings.AnnotationColor, settings.AnnotationStrokeWidth));
-        BuildToolbar(); RefreshStyle(); CurrentTool = AnnotationTools.DefaultTool;
+        BuildToolbar(); BuildExportToolbar(); RefreshStyle(); CurrentTool = AnnotationTools.DefaultTool;
         Document.Changed += DocumentChanged;
         PreviewKeyDown += KeyDownPreview; PreviewKeyUp += KeyUpPreview;
+        KeyDown += ExportKeyDown; SourceInitialized += InitializeSessionHook;
         Deactivated += WindowDeactivated; Activated += WindowActivated; Closing += WindowClosing; Closed += WindowClosed;
     }
     private void BuildToolbar()
@@ -122,10 +124,10 @@ internal sealed partial class AnnotationWindow : Window
     }
     private void PickCustomColor()
     {
-        if (Canvas.IsDragging) return;
-        HasOpenDialog = true;
+        if (Canvas.IsDragging || HasOpenDialog) return;
+        hasOpenDialog = true;
         try { if (ColorDialogPresenter.Pick(this, styleState.DisplayedStyle.Color) is { } color) Pick(new ToolbarStyleEvent.ColorPicked(color)); }
-        finally { HasOpenDialog = false; FocusCanvas(); }
+        finally { hasOpenDialog = false; FocusCanvas(); }
     }
     private void KeyDownPreview(object sender, KeyEventArgs e)
     {
@@ -141,8 +143,8 @@ internal sealed partial class AnnotationWindow : Window
             else if (route == TextEditingKeyRoute.Ignore) e.Handled = true;
             else if (route == TextEditingKeyRoute.Window)
             {
-                if (key is Key.W or Key.F4) Close();
-                else if (key == Key.S) TextEditing.Commit(); // 0043 adds saving after committing.
+                // Export commands bubble after the editor; Alt+F4 uses the normal system close.
+                if (key is Key.S or Key.W or Key.F4) return;
                 // 0044 adds Copy & Close for Ctrl+Enter; consume it without inserting a newline.
                 e.Handled = true;
             }
@@ -156,7 +158,6 @@ internal sealed partial class AnnotationWindow : Window
         if (modifiers.HasFlag(ModifierKeys.Windows)) coreModifiers |= KeyModifiers.Win;
         if (CanvasKeyMap.Map(KeyInterop.VirtualKeyFromKey(key), coreModifiers) is { } command)
         { e.Handled = Canvas.Execute(command); return; }
-        if (key == Key.W && modifiers == ModifierKeys.Control) { Close(); e.Handled = true; return; }
         if (key is Key.LeftShift or Key.RightShift && Canvas.IsDragging) { Canvas.RefreshPreview(); return; }
         var letter = key switch { Key.V => "v", Key.R => "r", Key.A => "a", Key.T => "t", _ => "" };
         if (AnnotationTools.ForShortcut(letter, (modifiers & (ModifierKeys.Control | ModifierKeys.Alt | ModifierKeys.Windows)) != 0, true) is { } tool)
@@ -168,15 +169,18 @@ internal sealed partial class AnnotationWindow : Window
     { if (TextEditing.IsEditing) TextEditing.RestoreFocus(); else { Canvas.Focus(); Keyboard.Focus(Canvas); } }
     private void WindowActivated(object? sender, EventArgs args)
     { if (TextEditing.IsEditing) Dispatcher.BeginInvoke(new Action(() => { if (IsActive) TextEditing.RestoreFocus(); })); }
-    private void WindowClosing(object? sender, System.ComponentModel.CancelEventArgs args) => TextEditing.Commit();
+    private void WindowClosing(object? sender, System.ComponentModel.CancelEventArgs args) => ConfirmWindowClosing(args);
     private void WindowDeactivated(object? sender, EventArgs args) => Canvas.AbortDrag();
     private void WindowClosed(object? sender, EventArgs args)
     {
+        isClosed = true; DisposeSessionHook();
         CaptureExclusion.Unregister(new HWND(Handle));
+        KeyDown -= ExportKeyDown; SourceInitialized -= InitializeSessionHook;
         PreviewKeyDown -= KeyDownPreview; PreviewKeyUp -= KeyUpPreview; Deactivated -= WindowDeactivated; Activated -= WindowActivated; Closing -= WindowClosing; Closed -= WindowClosed;
         Document.Changed -= DocumentChanged;
         TextEditing.Changed -= RefreshStyle; TextEditing.Dispose();
         Canvas.Dispose(); CanvasHost.Children.Clear(); Content = null;
+        closed.TrySetResult();
     }
     public unsafe void Place(DisplayInfo display, IReadOnlyCollection<PixelPoint> existingOrigins)
     {

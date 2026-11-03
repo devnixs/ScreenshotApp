@@ -40,5 +40,14 @@ internal sealed class AnnotationWindowManager(AppSettings settings)
     private void WindowClosed(object? sender, EventArgs args)
     { if (sender is AnnotationWindow window) { window.Closed -= WindowClosed; windows.Remove(window); } }
     public void CommitAllTextEdits() { foreach (var window in windows.ToArray()) window.TextEditing.Commit(); }
-    public void CloseAll() { foreach (var window in windows.ToArray()) window.Close(); }
+    public int DirtyWindowCount => windows.Count(window => window.Document.IsDirty);
+    public void CloseAllWithoutPrompt() { foreach (var window in windows.ToArray()) window.CloseWithoutPrompt(); }
+    public async Task CloseAllWithoutPromptAsync()
+    {
+        var closing = windows.ToArray();
+        foreach (var window in closing) window.CloseWithoutPrompt();
+        // A discard dialog may be nested inside Window.Closing. Let it unwind before Application.Shutdown.
+        await Task.WhenAll(closing.Select(window => window.ClosedTask));
+    }
+    public void PrepareForSessionEnd() { foreach (var window in windows.ToArray()) window.PrepareForSessionEnd(); }
 }
