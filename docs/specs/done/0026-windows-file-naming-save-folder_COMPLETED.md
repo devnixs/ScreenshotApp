@@ -288,3 +288,12 @@ internal static class ExplorerReveal
 - The recording output path, Explorer reveal after Stop, and write-failure handling: 0034. `.gif` output: 0046.
 - The annotation Save dialog's default folder and name (`AnnotationSaveDefaults`): 0043.
 - An onboarding window, TCC, `~` abbreviation, and Finder: macOS-only and not applicable (PRD §13.5, §13.10).
+
+## Verification status
+
+Automated verification on 2026-11-03: `dotnet build windows/Snapper.slnx -c Debug` passed with **0 warnings and 0 errors**. `dotnet test windows/Snapper.slnx` passed **98 tests**, including 61 new naming/save-folder cases, with **0 failures and 0 skips**. The existing assembly-boundary test continues to confirm that Core references no platform assemblies. Real filesystem tests ran on macOS, including write-denial behavior, probe cleanup, directory symlinks, and dangling-link collisions. Windows shell glue compiles but has not been run. No PRD or AGENTS.md changes were needed: existing behavior, layout, and commands cover this implementation.
+
+No callers are wired yet; end-to-end screenshot/recording checks remain with 0031, 0033, and 0034. Windows 11 manual checks:
+
+- [ ] not yet run by user: Build and run `Snapper.Windows`; confirm the tray/menu still behave as after 0025 and launch does not create a previously missing `Pictures\Screenshots` folder.
+- [ ] not yet run by user: Optional scratch Debug-only call (not committed): invoke `ExplorerReveal.RevealFile` for an existing file in Pictures and confirm Explorer selects it. Repeat with a nonexistent path and confirm it returns false without a dialog or crash.

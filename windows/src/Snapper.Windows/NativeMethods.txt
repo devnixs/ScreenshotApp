@@ -4,3 +4,6 @@ ASFW_ANY
 DestroyIcon
 MonitorFromPoint
 GetDpiForMonitor
+SHParseDisplayName
+SHOpenFolderAndSelectItems
+ILFree
