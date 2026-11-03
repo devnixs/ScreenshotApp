@@ -151,3 +151,46 @@ As a Snapper user, after pressing ⌘⇧4 I can press Space, see the window unde
 - Opening a window capture in the annotation editor: **0017**.
 - Refreshing window frames while the overlay is open, and keyboard selection of windows: not in the PRD.
 - Window drop shadows: a PRD non-goal (§2).
+
+## Verification status
+
+- 2026-11-03: `xcodegen generate` succeeded.
+- 2026-11-03: `xcodebuild -scheme Snapper -configuration Debug build` — **BUILD SUCCEEDED**.
+- 2026-11-03: `xcodebuild -scheme Snapper test` — **TEST SUCCEEDED**, 179 tests in 29 suites passed.
+  Added 23 tests covering CG ordering/alpha joins, all hit-test exclusions and half-open edges,
+  negative CG coordinates, AppKit cursor conversion, largest-overlap/nearest display assignment,
+  tie ordering, stale press rejection and fresh drags, window click arming, negative-origin 1×
+  rectangle clamping, and unavailable-window error classification. Existing tests retain 1×/2×
+  coordinate and PNG pixel/DPI coverage.
+- No GUI, hotkey, TCC, capture, pasteboard, sound, or overlay verification was performed.
+- PRD unchanged as specified. AGENTS.md now distinguishes rectangle confinement from whole-window
+  selection and lists the new pure window-selection logic. `captureWindowImage` preserves SCK's
+  actual point-pixel scale for the existing PNG metadata/output path; `captureWindow` exposes the
+  specified unmodified CGImage API using the same implementation.
+
+Manual checks (not yet verified; use the detailed Test plan above):
+
+- [ ] Not yet run by user: Space switches to arrow/window highlighting before a drag for all three shortcuts.
+- [ ] Not yet run by user: Space switches back to crosshair/rectangle mode without a leftover highlight.
+- [ ] Not yet run by user: Space during a drag removes the rectangle immediately; its release does nothing;
+  switching back requires a fresh mouse-down and a new rectangle captures normally.
+- [ ] Not yet run by user: selecting a partly covered window captures the entire window with no occluders,
+  drop shadow, overlay or cursor, transparent corners, native Retina pixels, clipboard output and shutter sound.
+- [ ] Not yet run by user: a window on a second 1× display captures at its native scale, including with
+  negative display origins; a spanning window highlights on both displays and captures in full.
+- [ ] Not yet run by user: Snapper Settings/onboarding and other Snapper windows cannot be selected.
+- [ ] Not yet run by user: menu bar, Dock and other non-layer-0 system UI cannot be selected.
+- [ ] Not yet run by user: clicking empty desktop leaves the overlay open without capture.
+- [ ] Not yet run by user: Esc cancels on every display in both modes.
+- [ ] Not yet run by user: clipboard-only and file-only destinations, folder errors and sound preferences
+  behave as for rectangle capture.
+- [ ] Not yet run by user: holding Space toggles once without flickering.
+- [ ] Not yet run by user: closing the target window before capture shows "The window is no longer available.";
+  moving or partly moving it off-screen still captures the whole window.
+- [ ] Not yet run by user: changing display configuration cancels window selection, and additional capture
+  shortcuts remain ignored while either overlay mode is open.
+- [ ] Not yet run by user: candidate loading/failure leaves window clicks inert until candidates are available,
+  while Space and Esc remain responsive; late loading cannot affect a later selection session.
+
+Rebuilding with a different signature can reset Screen Recording permission; check permission first if
+capture returns blank images or errors.

@@ -3,6 +3,8 @@ import AppKit
 @MainActor
 final class SelectionOverlayView: NSView {
     weak var controller: SelectionOverlayController?
+    var mode: SelectionMode = .rectangle { didSet { if mode != oldValue { needsDisplay = true } } }
+    var windowHighlight: CGRect? { didSet { if windowHighlight != oldValue { needsDisplay = true } } }
     var selectionRect: CGRect? { didSet { needsDisplay = true } }
     var readout: (text: String, origin: CGPoint)? { didSet { needsDisplay = true } }
     private var cursorTrackingArea: NSTrackingArea?
@@ -23,6 +25,22 @@ final class SelectionOverlayView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let window else { return }
+        if mode == .window {
+            NSColor.clear.setFill()
+            bounds.fill(using: .copy)
+            if let windowHighlight {
+                let local = windowHighlight.offsetBy(dx: -window.frame.minX, dy: -window.frame.minY).intersection(bounds)
+                if !local.isNull && !local.isEmpty {
+                    NSColor.controlAccentColor.withAlphaComponent(0.25).setFill()
+                    local.fill()
+                    NSColor.controlAccentColor.setStroke()
+                    let border = NSBezierPath(rect: local.insetBy(dx: 1, dy: 1))
+                    border.lineWidth = 2
+                    border.stroke()
+                }
+            }
+            return
+        }
         // Copy replaces the previous frame rather than accumulating translucent dimming.
         NSColor.black.withAlphaComponent(0.35).setFill()
         bounds.fill(using: .copy)
@@ -56,8 +74,8 @@ final class SelectionOverlayView: NSView {
         cursorTrackingArea = area
     }
 
-    override func cursorUpdate(with event: NSEvent) { NSCursor.crosshair.set() }
-    override func mouseMoved(with event: NSEvent) { NSCursor.crosshair.set() }
+    override func cursorUpdate(with event: NSEvent) { controller?.updateCursor() }
+    override func mouseMoved(with event: NSEvent) { controller?.mouseMoved(at: NSEvent.mouseLocation) }
 
     override func mouseDown(with event: NSEvent) {
         guard let point = window?.convertPoint(toScreen: event.locationInWindow) else { return }

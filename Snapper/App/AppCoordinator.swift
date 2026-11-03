@@ -70,7 +70,14 @@ final class AppCoordinator: NSObject {
                 if purpose == .screenshot {
                     let region = DisplayGeometry.captureRegion(for: rect, on: display)
                     guard region.pixelSize.width > 0, region.pixelSize.height > 0 else { return }
-                    await takeScreenshot(region, pixelsPerPoint: display.backingScale)
+                    await takeScreenshot { try await self.capturer.capture(region, pixelsPerPoint: display.backingScale) }
+                } else if purpose == .annotate {
+                    selectionLogger.info("Annotate not implemented yet")
+                }
+            case .window(let windowID, _, _):
+                selectionLogger.info("Window selection for \(purpose.rawValue, privacy: .public): \(windowID)")
+                if purpose == .screenshot {
+                    await takeScreenshot { try await self.capturer.captureWindowImage(windowID: windowID) }
                 } else if purpose == .annotate {
                     selectionLogger.info("Annotate not implemented yet")
                 }
@@ -82,11 +89,11 @@ final class AppCoordinator: NSObject {
         }
     }
 
-    private func takeScreenshot(_ region: CaptureRegion, pixelsPerPoint: CGFloat) async {
+    private func takeScreenshot(capture: @MainActor () async throws -> CapturedImage) async {
         let captureDate = Date()
         let image: CapturedImage
         do {
-            image = try await capturer.capture(region, pixelsPerPoint: pixelsPerPoint)
+            image = try await capture()
         } catch {
             screenshotLogger.error("Capture failed: \(error.localizedDescription, privacy: .public)")
             if CaptureFailure(error) == .permissionDenied { showOnboarding() }
