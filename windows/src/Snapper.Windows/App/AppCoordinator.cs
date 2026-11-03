@@ -3,6 +3,7 @@ using System.ComponentModel;
 using Snapper.Core.App;
 using Snapper.Core.Support;
 using Snapper.Core.Capture;
+using Snapper.Windows.Interop;
 using System.Windows;
 using System.Windows.Controls;
 using Snapper.Core.Settings;
@@ -21,6 +22,8 @@ internal sealed class AppCoordinator : IDisposable
     private HotkeyManager? hotkeys;
     private bool disposed;
     private readonly SelectionOverlayController overlay;
+    private readonly Direct3D11Helper d3d = new();
+    private readonly ShutterSound shutterSound = new();
     public AppMode Mode => modeMachine.Mode;
     internal HotkeyManager? Hotkeys => hotkeys;
 
@@ -76,6 +79,8 @@ internal sealed class AppCoordinator : IDisposable
     private async void BeginSelection(CapturePurpose purpose)
     {
         tray?.CloseMenu();
+        var annotateForeground = new ForegroundRestorer();
+        if (purpose == CapturePurpose.Annotate) annotateForeground.Remember();
         try
         {
             var result = await overlay.SelectRegionAsync(purpose);
@@ -86,6 +91,12 @@ internal sealed class AppCoordinator : IDisposable
             {
                 case RectSelection(var display, var rect):
                     Trace.WriteLine($"Selection for {purpose}: display {display.DeviceName}, rect ({rect.X}, {rect.Y}, {rect.Width}, {rect.Height}) px");
+                    if (purpose == CapturePurpose.Screenshot) await TakeScreenshot(display, rect);
+                    else if (purpose == CapturePurpose.Annotate)
+                    {
+                        Debug.WriteLine("Snapper: Annotate isn't available yet");
+                        annotateForeground.Restore();
+                    }
                     break;
                 default: throw new UnreachableException();
             }
@@ -97,6 +108,33 @@ internal sealed class AppCoordinator : IDisposable
             Debug.WriteLine($"Snapper: Couldn't show selection: {error}");
             Send(new AppModeEvent.SelectionCancelled());
         }
+    }
+    private async Task TakeScreenshot(Snapper.Core.Geometry.DisplayInfo display, Snapper.Core.Geometry.PixelRect rect)
+    {
+        var date = DateTime.Now;
+        try
+        {
+            var image = await new ScreenshotCapturer(d3d).CaptureMonitorRegionAsync(display, rect);
+            if (disposed) return;
+            if (Settings.PlayShutterSound) shutterSound.Play();
+            var (png, dib) = await Task.Run(() => (PngEncoder.Encode(image), DibEncoder.FromBgra(image.Bgra, image.Width, image.Height)));
+            if (disposed) return;
+            var output = ScreenshotOutputRunner.Run(new ScreenshotOutputPlan(Settings.ScreenshotDestination), Settings.SaveFolder,
+                new ScreenshotEnvironment(Settings, png, dib, date));
+            Debug.WriteLine($"Snapper: Screenshot copied: {output.Copied}, saved: {output.SavedPath ?? "(none)"}");
+        }
+        catch (Exception error)
+        {
+            Debug.WriteLine($"Snapper: Screenshot failed: {error}");
+            if (!disposed) ErrorAlerts.ShowCaptureFailure(error);
+        }
+    }
+    private sealed class ScreenshotEnvironment(AppSettings settings, byte[] png, byte[] dib, DateTime date) : IScreenshotOutputEnvironment
+    {
+        public bool CopyToClipboard() => Support.Clipboard.Copy(png, dib);
+        public string Save(string folder) => ScreenshotFileWriter.Save(png, folder, date);
+        public string? ShowSaveFolderFailure(string folder, Exception error) => ErrorAlerts.ShowSaveFolderFailure(folder, error, settings);
+        public void ShowError(string title, string message) => ErrorAlerts.ShowError(title, message);
     }
     private void HotkeyPressed(CapturePurpose purpose) => Send(new AppModeEvent.Shortcut(purpose));
     private void HotkeyFailed(IReadOnlyList<KeyChord> chords) => tray?.ShowWarningBalloon(
@@ -159,6 +197,8 @@ internal sealed class AppCoordinator : IDisposable
         }
         overlay.Cancel();
         Displays.Dispose();
+        d3d.Dispose();
+        shutterSound.Dispose();
         tray?.Dispose();
         tray = null;
     }

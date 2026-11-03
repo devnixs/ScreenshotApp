@@ -364,7 +364,7 @@ Snapper's overlay and no cursor in the image.
 - [ ] With monitors at different scales (e.g. 100% and 150%), the capture comes from the monitor
       where the drag started, matches the dragged area, and has that monitor's native pixel size,
       including a monitor left of or above the primary (negative virtual-screen origin) (§13.11).
-- [ ] The image contains no dimming, selection rectangle, W×H readout, other Snapper window, or
+- [ ] The image contains no dimming, selection rectangle, W×H readout, capture-excluded Snapper overlay, or
       cursor.
 - [ ] No yellow capture border appears during capture on Windows 11 builds that allow borderless
       capture. Where Windows refuses, capture still succeeds.
@@ -549,3 +549,30 @@ Snapper's overlay and no cursor in the image.
   of overlays) — 0030.
 - HDR tone mapping, JPEG output, floating thumbnails, window shadows — PRD §2 non-goals or v1
   limitations.
+
+## Verification status
+
+Automated verification on 2026-11-03: `dotnet build windows/Snapper.slnx -c Debug` passed with **0 warnings and 0 errors**. `dotnet test windows/Snapper.slnx` passed **522 tests**, including **60 new cases**, with **0 failures and 0 skips**. Logs: `/tmp/snapper-0031-build.log` and `/tmp/snapper-0031-test.log`.
+
+Implemented Core capture crops/pitched-row copies, image validation, output decisions and bounded folder retry, save-error classification, collision-safe file writes, DIB packing, and deterministic shutter WAV synthesis. Windows glue uses WGC, CsWin32 D3D11 interfaces, WIC-backed PNG encoding, PNG/DIB clipboard output, native alerts, and sound playback. Checked HRESULT-returning P/Invokes explicitly; generated COM methods without `PreserveSig` throw on failed HRESULTs. No new packages were added.
+
+Internal API adaptations: the shared D3D11 helper provides disposable device-generation leases (`Acquire`), with the projected WinRT device, native device/context, texture access and staging creation on the lease. This prevents an independent capture's reset from disposing another capture's resources. `ErrorAlerts.ShowSaveFolderFailure` accepts `AppSettings` without a redundant store argument because `AppSettings` already owns persistence. TaskDialog startup location is supplied to `ShowDialog`, matching the actual framework API. AGENTS.md now records the tested Core helpers and device-lease ownership rule. PRD behavior is unchanged. The acceptance wording about other Snapper windows was clarified to capture-excluded overlays: PRD §13.6 explicitly permits ordinary Settings and annotation windows to appear in capture.
+
+Actual WGC/D3D11 capture, WIC PNG metadata, native clipboard/audio/dialog behavior, and all GUI paths require Windows 11 and **have not been verified here**. Until 0033 provides Settings, exit Snapper, edit `%APPDATA%\Snapper\settings.json`, and relaunch to change destination, folder or shutter settings.
+
+- [ ] not yet run by user: At defaults on a 150% monitor, capture about 300×200 DIPs; confirm shutter sound, named PNG in Pictures\Screenshots, about 450×300 pixels at 144 DPI, and successful paste into Paint.
+- [ ] not yet run by user: Open the PNG and confirm the selected area contains no dimming, selection outline/readout, mouse cursor, or excluded Snapper overlay.
+- [ ] not yet run by user: Repeat on 100% and 200% monitors; confirm native pixel dimensions and 96/192 DPI metadata.
+- [ ] not yet run by user: Capture on a differently scaled monitor left of or above the primary; confirm correct content and native pixel size.
+- [ ] not yet run by user: Watch monitor edges during capture; confirm no yellow border where Windows permits borderless capture, and successful capture if Windows retains it.
+- [ ] not yet run by user: With file-only destination, capture after copying text; confirm the file saves and clipboard text remains.
+- [ ] not yet run by user: With clipboard-only destination, move Pictures\Screenshots aside, capture and paste into Paint and Word/browser; confirm the folder is not recreated, then restore it.
+- [ ] not yet run by user: Toggle shutter sound off/on and capture repeatedly; confirm silence when disabled and asynchronous restarting clicks when enabled.
+- [ ] not yet run by user: With Both, remove the save folder and capture; confirm it is recreated and contains the PNG.
+- [ ] not yet run by user: Deny write access to the save folder and capture with Both; confirm full-path/system-detail alert and clipboard image. Choose Desktop and confirm one save retry plus persisted folder. Repeat with Cancel; restore permissions afterward.
+- [ ] not yet run by user: Set a removable-drive save folder, unplug it and capture; confirm the save-folder alert.
+- [ ] not yet run by user: Capture twice in one second; confirm the second filename has a collision suffix and the first file is preserved.
+- [ ] not yet run by user: Where practical, test a driver reset or sleeping monitor; confirm capture recovers or shows the capture error after about three seconds without a hang.
+- [ ] not yet run by user: Capture on a portrait monitor; confirm correct orientation and area.
+- [ ] not yet run by user: Press Ctrl+Shift+6 and select; confirm no file, clipboard change or sound, and typing returns to the previous app (annotation is not available until 0040).
+- [ ] not yet run by user: Press Ctrl+Shift+5 and select; confirm the unchanged 0030 placeholder behavior until 0034.
