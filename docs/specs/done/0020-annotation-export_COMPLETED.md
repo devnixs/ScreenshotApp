@@ -198,3 +198,30 @@ As a Snapper user who annotated a capture, I can press ⌘S to save it as a full
 - The *Screenshot destination* setting, the shutter sound, and the "Couldn't save to <folder>" **Choose Folder…** alert for ⌘⇧4 (0008).
 - Quitting while recording (0011).
 - JPEG or other formats (PRD §2 non-goal), and "Save As" or other format options.
+
+
+## Verification status
+
+- 2026-11-03: `xcodegen generate` succeeded; `xcodebuild -scheme Snapper -configuration Debug build` **BUILD SUCCEEDED**; `xcodebuild -scheme Snapper test` **TEST SUCCEEDED**, **357 tests in 64 suites**, all green.
+- Added headless raster coverage for exact 1×/2× dimensions and PNG DPI, asymmetric source orientation, top-left rectangle strokes/interiors, arrows, clipping, text ink in its bounds, zoom and selection invariance, z-order, source Display P3/profile preservation, grayscale fallback, and recoverable size mismatch. Size-mismatch tests explicitly disable the programming-error assertion through the internal overload; production always asserts and throws.
+- Added pure filename collision/capture-date tests and unsaved close/quit decision tests, including real text-commit/model clean/dirty transitions. Shared AppKit shape drawing and bitmap export are explicitly main-actor isolated.
+- GUI, permission, pasteboard routing, panels and termination paths were **not run**. No GUI app was launched for verification. Manual checks below remain pending.
+
+- [ ] not yet run by user — On a Retina display, press ⌘⇧6, select a region of roughly 400×300 pt, and draw a rectangle, an arrow, and a text box. Note the region's size.
+- [ ] not yet run by user — Press ⌘S. A sheet appears on the annotation window. The folder is the Settings save folder (`~/Documents/Screenshots` by default) and the name is `Screenshot <date> at <time>.png`, matching the time of the capture, not of the Save. Save it.
+- [ ] not yet run by user — In Terminal, run `sips -g pixelWidth -g pixelHeight ~/Documents/Screenshots/"Screenshot … .png"`. The size is 2× the selection's point size. Open the file in Preview: all three shapes are present and there are no selection handles.
+- [ ] not yet run by user — Resize the annotation window very small so the canvas is zoomed out, then press ⌘S again. The suggested name now ends in ` (2)`. Save it, and `sips` shows the **same** pixel size as in step 3.
+- [ ] not yet run by user — Rename `~/Documents/Screenshots` temporarily, then press ⌘S. The folder is recreated and the panel opens in it. Restore it afterwards.
+- [ ] not yet run by user — Press ⌘C (no text being edited). In Preview, choose File ▸ New from Clipboard. The image has full resolution (Tools ▸ Adjust Size shows the 2× pixel dimensions) and contains the shapes. The annotation window is still open.
+- [ ] not yet run by user — Double-click the text box, select part of its text, and press ⌘C. Paste into TextEdit: only the selected text is pasted. In Preview, File ▸ New from Clipboard shows no new image.
+- [ ] not yet run by user — Draw a new shape, then click the window's close button. "Discard changes?" appears as a sheet. Click Cancel: the window and shape remain. Press ⌘W, then click Discard: the window closes.
+- [ ] not yet run by user — Open a new annotation, draw, press ⌘C, then close the window. It closes without a prompt.
+- [ ] not yet run by user — Open a new annotation, draw, press ⌘C, draw another shape, then close. "Discard changes?" appears.
+- [ ] not yet run by user — Open a new annotation, place a text box, type nothing, and close the window. It closes with no prompt.
+- [ ] not yet run by user — Open two annotation windows and draw in both. Press ⌘Q while one is key. Exactly one alert appears: "Quit and discard 2 unsaved annotations?". Click Cancel: both windows remain. Then choose **Quit Snapper** from the status-item menu. The same alert appears. Click Quit: Snapper quits.
+- [ ] not yet run by user — With one dirty window, quit: the alert reads "Quit and discard 1 unsaved annotation?". With only clean annotation windows open, Snapper quits immediately.
+- [ ] not yet run by user — Press ⌘S, choose a read-only folder (for example `/System`), and Save. An error alert appears and the window still prompts on close.
+- [ ] not yet run by user — While typing nonempty text, use the toolbar Copy button and ⌘S: the text commits and appears in the exported image. While editing with an empty selection, ⌘C does nothing and does not copy the image. Save/Copy leave the window open and do not play a sound or reveal Finder.
+- [ ] not yet run by user — Change the save folder in Settings. Verify every Save starts there, choosing another panel folder does not change Settings, cancelling Save leaves edits dirty, and an unavailable default folder still permits choosing a destination without an extra alert.
+- [ ] not yet run by user — Quit with an attached Save or Discard sheet and several dirty windows on different displays/Spaces: one app-modal aggregate alert appears. Cancel preserves the windows. Try closing while a sheet is attached: no second sheet appears.
+- [ ] not yet run by user — With a recording active and a dirty annotation, cancel Quit: recording continues and annotations remain. Confirm Quit: recording stops and saves before exit, with no per-window discard prompts. Also check logout/restart uses the same confirmation.

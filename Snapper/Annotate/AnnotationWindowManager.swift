@@ -6,6 +6,11 @@ final class AnnotationWindowManager {
     private let settings: AppSettings
     init(settings: AppSettings) { self.settings = settings }
 
+    func commitAllTextEdits() {
+        for controller in controllers { controller.canvas.textEditingController.commit() }
+    }
+    var dirtyWindowCount: Int { controllers.filter { $0.canvas.document.isDirty }.count }
+
     func open(_ captured: CapturedImage, displayID: CGDirectDisplayID?, captureDate: Date) {
         let target = NSScreen.screens.first {
             ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == displayID

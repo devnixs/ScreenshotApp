@@ -3,6 +3,7 @@ import Foundation
 import Testing
 @testable import Snapper
 
+@MainActor
 struct ShapeRendererTests {
     private func bitmap(_ size: Int = 100) throws -> CGContext {
         let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))

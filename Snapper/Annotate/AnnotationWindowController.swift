@@ -1,9 +1,14 @@
 import AppKit
+import UniformTypeIdentifiers
 
 @MainActor
-final class AnnotationWindowController: NSWindowController, NSWindowDelegate, NSToolbarDelegate {
+final class AnnotationWindowController: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NSMenuItemValidation {
     static let toolsIdentifier = NSToolbarItem.Identifier("AnnotationTools")
     static let styleIdentifier = NSToolbarItem.Identifier("AnnotationStyle")
+    static let saveIdentifier = NSToolbarItem.Identifier("AnnotationSave")
+    static let copyIdentifier = NSToolbarItem.Identifier("AnnotationCopy")
+    let captureDate: Date
+    private var isClosingConfirmed = false
     private let settings: AppSettings
     private(set) var toolbarStyleState: ToolbarStyleState
     private let styleControls = NSStackView()
@@ -14,7 +19,7 @@ final class AnnotationWindowController: NSWindowController, NSWindowDelegate, NS
     let canvas: AnnotationCanvasView
     var onClose: ((AnnotationWindowController) -> Void)?
     private let tools = NSSegmentedControl()
-    private let toolbarItems: [NSToolbarItem.Identifier] = [toolsIdentifier, styleIdentifier]
+    private let toolbarItems: [NSToolbarItem.Identifier] = [toolsIdentifier, styleIdentifier, .flexibleSpace, saveIdentifier, copyIdentifier]
     var currentTool: AnnotationTool = .rectangle {
         didSet {
             canvas.currentTool = currentTool
@@ -24,6 +29,7 @@ final class AnnotationWindowController: NSWindowController, NSWindowDelegate, NS
 
     init(captured: CapturedImage, captureDate: Date, screen: NSScreen, settings: AppSettings, existingOrigins: [CGPoint]) {
         self.settings = settings
+        self.captureDate = captureDate
         toolbarStyleState = ToolbarStyleState(currentStyle: ShapeStyle(color: settings.annotationColor, strokeWidth: settings.annotationStrokeWidth))
         canvas = AnnotationCanvasView(image: captured, color: settings.annotationColor, strokeWidth: settings.annotationStrokeWidth)
         let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 480, height: 300),
@@ -81,6 +87,16 @@ final class AnnotationWindowController: NSWindowController, NSWindowDelegate, NS
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { toolbarItems }
     func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier identifier: NSToolbarItem.Identifier,
                  willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
+        if identifier == Self.saveIdentifier || identifier == Self.copyIdentifier {
+            let saving = identifier == Self.saveIdentifier
+            let item = NSToolbarItem(itemIdentifier: identifier)
+            item.label = saving ? "Save" : "Copy"
+            item.toolTip = saving ? "Save (⌘S)" : "Copy (⌘C)"
+            item.image = NSImage(systemSymbolName: saving ? "square.and.arrow.down" : "doc.on.doc", accessibilityDescription: item.label)
+            item.target = self
+            item.action = saving ? #selector(saveDocument(_:)) : #selector(copy(_:))
+            return item
+        }
         guard identifier == Self.toolsIdentifier || identifier == Self.styleIdentifier else { return nil }
         let item = NSToolbarItem(itemIdentifier: identifier)
         item.label = identifier == Self.toolsIdentifier ? "Tools" : "Style"
@@ -176,8 +192,66 @@ final class AnnotationWindowController: NSWindowController, NSWindowDelegate, NS
     }
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         canvas.textEditingController.commit()
-        return true
+        if isClosingConfirmed { return true }
+        guard sender.attachedSheet == nil else { NSSound.beep(); return false }
+        guard UnsavedAnnotationsPolicy.closeDecision(isDirtyAfterCommittingText: canvas.document.isDirty) == .confirmDiscard else { return true }
+        let alert = NSAlert()
+        alert.messageText = UnsavedAnnotationsPolicy.discardTitle
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: UnsavedAnnotationsPolicy.discardButton).hasDestructiveAction = true
+        alert.addButton(withTitle: UnsavedAnnotationsPolicy.cancelButton)
+        alert.beginSheetModal(for: sender) { [weak self] response in
+            guard response == .alertFirstButtonReturn, let self else { return }
+            self.isClosingConfirmed = true
+            self.window?.close()
+        }
+        return false
     }
+
+    @objc func saveDocument(_ sender: Any?) {
+        guard !canvas.isDragging else { NSSound.beep(); return }
+        canvas.textEditingController.commit()
+        guard let window, window.attachedSheet == nil else { NSSound.beep(); return }
+        let directory = try? SaveFolder(url: settings.saveFolderURL).prepareForWriting()
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.png]
+        panel.canCreateDirectories = true
+        panel.directoryURL = directory
+        panel.nameFieldStringValue = AnnotationSaveDefaults.suggestedFileName(captureDate: captureDate, directory: directory) {
+            FileManager.default.fileExists(atPath: $0.path)
+        }
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard response == .OK, let self, let url = panel.url else { return }
+            do {
+                // Snapshot at confirmation, so only the exported revision becomes clean.
+                let image = try AnnotationExporter.flatten(image: self.canvas.image, document: self.canvas.document)
+                let png = try PNGEncoder.data(for: image, pixelsPerPoint: self.canvas.document.pixelsPerPoint)
+                try png.write(to: url, options: .atomic)
+                self.canvas.document.markClean()
+            } catch {
+                ErrorAlerts.showError(title: "Couldn't save to \(url.deletingLastPathComponent().lastPathComponent)", error: error)
+            }
+        }
+    }
+
+    @objc func copy(_ sender: Any?) {
+        guard !canvas.isDragging else { NSSound.beep(); return }
+        canvas.textEditingController.commit()
+        do {
+            let image = try AnnotationExporter.flatten(image: canvas.image, document: canvas.document)
+            let png = try PNGEncoder.data(for: image, pixelsPerPoint: canvas.document.pixelsPerPoint)
+            guard Clipboard.copy(pngData: png, image: image) else {
+                throw NSError(domain: "com.thera-engineering.snapper.clipboard", code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "The clipboard couldn't accept the annotated image."])
+            }
+            canvas.document.markClean()
+        } catch { ErrorAlerts.showError(title: "Couldn't copy to clipboard", error: error) }
+    }
+
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        menuItem.action == #selector(copy(_:)) || menuItem.action == #selector(saveDocument(_:))
+    }
+
     func windowWillClose(_ notification: Notification) {
         // NSColorPanel exposes setters but no target getter. Clear only our panel ownership.
         if Self.colorPanelOwner === self {

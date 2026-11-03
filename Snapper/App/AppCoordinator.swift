@@ -176,6 +176,16 @@ final class AppCoordinator: NSObject {
     }
 
     func applicationShouldTerminate() -> NSApplication.TerminateReply {
+        annotationWindowManager.commitAllTextEdits()
+        if case .confirm(let message) = UnsavedAnnotationsPolicy.quitDecision(dirtyWindowCount: annotationWindowManager.dirtyWindowCount) {
+            NSApp.activate()
+            let alert = NSAlert()
+            alert.messageText = message
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: UnsavedAnnotationsPolicy.quitButton).hasDestructiveAction = true
+            alert.addButton(withTitle: UnsavedAnnotationsPolicy.cancelButton)
+            guard alert.runModal() == .alertFirstButtonReturn else { return .terminateCancel }
+        }
         if termination.request(recordingActive: recordingSession != nil) {
             stopRecording()
             return .terminateLater
@@ -210,7 +220,7 @@ final class AppCoordinator: NSObject {
             switch selection {
             case .rect(let display, _), .window(_, _, let display): displayID = display.displayID
             }
-            annotationWindowManager.open(image, displayID: displayID, captureDate: captureDate)
+            annotationWindowManager.open(image, displayID: displayID, captureDate: Date())
             return
         }
         let png: Data

@@ -49,7 +49,8 @@ Run the build and the tests before reporting work as done. Report failures as th
 ## Architecture rules
 
 - **Keep logic testable and separate from AppKit.** The following are pure Swift types with unit tests:
-  - the annotation model (shapes, hit-testing, move/resize, undo/redo)
+  - the annotation model (shapes, hit-testing, move/resize, undo/redo), save-name defaults, and unsaved close/quit policies
+  - full-resolution annotation raster export (headless bitmap tests; shared AppKit renderer and exporter run on the main actor)
   - the geometry helpers (point↔pixel conversion, display selection, overlay pill placement, annotation canvas transforms and window sizing)
   - text commit decisions, contrast outlines, font/placement metrics, and text click routing (with injected text measurement for selected-shape size changes)
   - annotation tool routing, drawing and editing drag state (view-point thresholds, image-edge clamping, Shift constraints), selection hit-testing, and toolbar style decisions

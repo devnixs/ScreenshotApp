@@ -1,6 +1,7 @@
 import AppKit
 
 /// The destination CTM must map top-left, y-down image pixels into the destination.
+@MainActor
 enum ShapeRenderer {
     static func drawImage(_ image: CGImage, in context: CGContext) {
         context.saveGState()
