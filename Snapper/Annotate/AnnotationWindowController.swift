@@ -7,6 +7,10 @@ final class AnnotationWindowController: NSWindowController, NSWindowDelegate, NS
     static let styleIdentifier = NSToolbarItem.Identifier("AnnotationStyle")
     static let saveIdentifier = NSToolbarItem.Identifier("AnnotationSave")
     static let copyIdentifier = NSToolbarItem.Identifier("AnnotationCopy")
+    static let copyAndCloseIdentifier = NSToolbarItem.Identifier("AnnotationCopyAndClose")
+    static let toolbarItems: [NSToolbarItem.Identifier] = [
+        toolsIdentifier, styleIdentifier, .flexibleSpace, saveIdentifier, copyIdentifier, copyAndCloseIdentifier
+    ]
     let captureDate: Date
     private var isClosingConfirmed = false
     private let settings: AppSettings
@@ -19,7 +23,6 @@ final class AnnotationWindowController: NSWindowController, NSWindowDelegate, NS
     let canvas: AnnotationCanvasView
     var onClose: ((AnnotationWindowController) -> Void)?
     private let tools = NSSegmentedControl()
-    private let toolbarItems: [NSToolbarItem.Identifier] = [toolsIdentifier, styleIdentifier, .flexibleSpace, saveIdentifier, copyIdentifier]
     var currentTool: AnnotationTool = .rectangle {
         didSet {
             canvas.currentTool = currentTool
@@ -83,18 +86,32 @@ final class AnnotationWindowController: NSWindowController, NSWindowDelegate, NS
         currentTool = tool
         window?.makeFirstResponder(canvas)
     }
-    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { toolbarItems }
-    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { toolbarItems }
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { Self.toolbarItems }
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { Self.toolbarItems }
     func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier identifier: NSToolbarItem.Identifier,
                  willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
-        if identifier == Self.saveIdentifier || identifier == Self.copyIdentifier {
-            let saving = identifier == Self.saveIdentifier
+        if [Self.saveIdentifier, Self.copyIdentifier, Self.copyAndCloseIdentifier].contains(identifier) {
             let item = NSToolbarItem(itemIdentifier: identifier)
-            item.label = saving ? "Save" : "Copy"
-            item.toolTip = saving ? "Save (⌘S)" : "Copy (⌘C)"
-            item.image = NSImage(systemSymbolName: saving ? "square.and.arrow.down" : "doc.on.doc", accessibilityDescription: item.label)
+            let symbol: String
+            switch identifier {
+            case Self.saveIdentifier:
+                item.label = "Save"
+                item.toolTip = "Save (⌘S)"
+                symbol = "square.and.arrow.down"
+                item.action = #selector(saveDocument(_:))
+            case Self.copyIdentifier:
+                item.label = "Copy"
+                item.toolTip = "Copy (⌘C)"
+                symbol = "doc.on.doc"
+                item.action = #selector(copy(_:))
+            default:
+                item.label = "Copy & Close"
+                item.toolTip = "Copy & Close (⌘↩)"
+                symbol = "checkmark"
+                item.action = #selector(copyAndClose(_:))
+            }
+            item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: item.label)
             item.target = self
-            item.action = saving ? #selector(saveDocument(_:)) : #selector(copy(_:))
             return item
         }
         guard identifier == Self.toolsIdentifier || identifier == Self.styleIdentifier else { return nil }
@@ -236,6 +253,23 @@ final class AnnotationWindowController: NSWindowController, NSWindowDelegate, NS
 
     @objc func copy(_ sender: Any?) {
         guard !canvas.isDragging else { NSSound.beep(); return }
+        _ = copyFlattenedImage()
+    }
+
+    @objc func copyAndClose(_ sender: Any?) {
+        guard let window else { return }
+        guard CopyAndCloseDecision.start(isDragging: canvas.isDragging,
+                                         hasAttachedSheet: window.attachedSheet != nil) == .copy else {
+            NSSound.beep()
+            return
+        }
+        let copied = copyFlattenedImage()
+        if CopyAndCloseDecision.finish(copySucceeded: copied) == .close {
+            window.close()
+        }
+    }
+
+    private func copyFlattenedImage() -> Bool {
         canvas.textEditingController.commit()
         do {
             let image = try AnnotationExporter.flatten(image: canvas.image, document: canvas.document)
@@ -245,11 +279,16 @@ final class AnnotationWindowController: NSWindowController, NSWindowDelegate, NS
                     userInfo: [NSLocalizedDescriptionKey: "The clipboard couldn't accept the annotated image."])
             }
             canvas.document.markClean()
-        } catch { ErrorAlerts.showError(title: "Couldn't copy to clipboard", error: error) }
+            return true
+        } catch {
+            ErrorAlerts.showError(title: "Couldn't copy to clipboard", error: error)
+            return false
+        }
     }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         menuItem.action == #selector(copy(_:)) || menuItem.action == #selector(saveDocument(_:))
+            || menuItem.action == #selector(copyAndClose(_:))
     }
 
     func windowWillClose(_ notification: Notification) {

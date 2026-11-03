@@ -27,7 +27,8 @@ enum MainMenuLayout {
     ]
     static let file: [MenuCommandSpec?] = [
         .init(title: "Close", keyEquivalent: "w", modifiers: .command, action: "performClose:"),
-        .init(title: "Save…", keyEquivalent: "s", modifiers: .command, action: "saveDocument:")
+        .init(title: "Save…", keyEquivalent: "s", modifiers: .command, action: "saveDocument:"),
+        .init(title: "Copy & Close", keyEquivalent: "\r", modifiers: .command, action: "copyAndClose:")
     ]
     static let edit: [MenuCommandSpec?] = [
         .init(title: "Undo", keyEquivalent: "z", modifiers: .command, action: "undo:"),

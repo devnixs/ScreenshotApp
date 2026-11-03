@@ -18,7 +18,8 @@ struct MainMenuLayoutTests {
     @Test func fileCommandsRouteSaveAndClose() {
         #expect(MainMenuLayout.file.compactMap { $0 } == [
             MenuCommandSpec(title: "Close", keyEquivalent: "w", modifiers: .command, action: "performClose:"),
-            MenuCommandSpec(title: "Save…", keyEquivalent: "s", modifiers: .command, action: "saveDocument:")
+            MenuCommandSpec(title: "Save…", keyEquivalent: "s", modifiers: .command, action: "saveDocument:"),
+            MenuCommandSpec(title: "Copy & Close", keyEquivalent: "\r", modifiers: .command, action: "copyAndClose:")
         ])
     }
 

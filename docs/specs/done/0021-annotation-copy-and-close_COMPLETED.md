@@ -164,3 +164,21 @@ the annotated image is on my clipboard and the window is gone, in one step and w
 - Making the shortcut configurable in Settings (§10 covers only the three global shortcuts).
 - Copying a file reference (file URL) instead of image data: Copy & Close puts the same PNG + image
   data on the clipboard as Copy.
+
+## Verification status
+
+- **2026-11-03:** `xcodegen generate` succeeded; `xcodebuild -scheme Snapper -configuration Debug build` succeeded; `xcodebuild -scheme Snapper test` succeeded: **364 tests in 66 suites passed**, zero failures.
+- Added six pure decision tests and one main-actor toolbar-order test; updated the File-menu expectation. The duplicate-shortcut test still passes.
+- PRD §8.2 and §12 already specify this behavior; no PRD or architecture changes were needed.
+- GUI behavior has not been manually verified. Run the following with Screen Recording permission granted:
+
+- [ ] not yet run by user — Capture with ⌘⇧6; confirm Save, Copy, checkmark order and tooltip "Copy & Close (⌘↩)".
+- [ ] not yet run by user — Draw a rectangle and arrow; click the checkmark; confirm no discard prompt and paste into Preview to verify both shapes at full pixel resolution (2× on Retina).
+- [ ] not yet run by user — Draw a shape in a new annotation and press ⌘↩; confirm the same clipboard image and immediate close.
+- [ ] not yet run by user — Edit a text box with "Hello", Return, "World"; press ⌘↩ while editing; confirm both lines appear in the pasted image.
+- [ ] not yet run by user — Open the Save panel with ⌘S; invoke Copy & Close; confirm it beeps or is disabled and leaves the window open; cancel the panel.
+- [ ] not yet run by user — Draw in two annotation windows; use ⌘↩ in one; confirm only that window closes and ⌘Q reports one unsaved annotation.
+- [ ] not yet run by user — Confirm File → Copy & Close ⌘↩ is enabled for a key annotation window and disabled without one.
+- [ ] not yet run by user — Regression: ⌘C copies while leaving the window open; ⌘S still saves.
+
+Rebuilding with a different signature can reset Screen Recording permission.
