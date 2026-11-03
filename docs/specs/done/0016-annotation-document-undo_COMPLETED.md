@@ -5,10 +5,10 @@
 
 ## Context
 
-No application code exists yet. Spec 0015 adds the pure shape model in `Snapper/Annotate/Model/`:
+Spec 0015 provides the pure shape model in `Snapper/Annotate/Model/`:
 `AnnotationShape` (rectangle / arrow / text, each with a stable `id: UUID`, a color, a stroke
 width, geometry in **image pixel coordinates**), `ShapeHandle`, per-shape hit-testing, move, and
-resize. What is missing is the thing that owns a whole annotation session: the ordered list of
+resize. This spec adds the owner of a whole annotation session: the ordered list of
 shapes, which one is selected, the undo/redo history, and whether the window has unsaved changes.
 
 The PRD requires:
@@ -218,23 +218,23 @@ These are engineering decisions inside the PRD's behavior. They are fixed for th
 
 ## Acceptance criteria
 
-- [ ] `Snapper/Annotate/Model/AnnotationDocument.swift` exists, imports only Foundation/CoreGraphics
+- [x] `Snapper/Annotate/Model/AnnotationDocument.swift` exists, imports only Foundation/CoreGraphics
       (no AppKit, no `UndoManager`), and exposes the API above.
-- [ ] Every edit kind (add, delete, move/resize/recolor/restroke/text change via `replace`) is
+- [x] Every edit kind (add, delete, move/resize/recolor/restroke/text change via `replace`) is
       undoable and redoable, matching PRD §8.2 "covers every edit".
-- [ ] A coalesced session with many intermediate `replace` calls produces exactly one undo step.
-- [ ] A commit with no net shape change pushes nothing and does not clear redo.
-- [ ] `cancelEdit()` restores shapes and selection exactly and pushes nothing.
-- [ ] Any committed edit clears the redo stack.
-- [ ] Selection changes alone are never undo steps and never make the document dirty; undo/redo
+- [x] A coalesced session with many intermediate `replace` calls produces exactly one undo step.
+- [x] A commit with no net shape change pushes nothing and does not clear redo.
+- [x] `cancelEdit()` restores shapes and selection exactly and pushes nothing.
+- [x] Any committed edit clears the redo stack.
+- [x] Selection changes alone are never undo steps and never make the document dirty; undo/redo
       restore the selection captured with each step.
-- [ ] Undoing a delete restores the shape at its original z-index.
-- [ ] `isDirty` is false for a new document, true after an edit, false after `markClean()`, false
+- [x] Undoing a delete restores the shape at its original z-index.
+- [x] `isDirty` is false for a new document, true after an edit, false after `markClean()`, false
       again after undoing back to the clean revision, and true after a different edit following such
       an undo.
-- [ ] Placing and abandoning an empty new text box (sequence above) leaves no undo step and no dirty
+- [x] Placing and abandoning an empty new text box (sequence above) leaves no undo step and no dirty
       state.
-- [ ] `xcodegen generate`, `xcodebuild -scheme Snapper -configuration Debug build`, and
+- [x] `xcodegen generate`, `xcodebuild -scheme Snapper -configuration Debug build`, and
       `xcodebuild -scheme Snapper test` all succeed.
 
 ## Edge cases
@@ -338,3 +338,16 @@ These are engineering decisions inside the PRD's behavior. They are fixed for th
 - Export, ⌘S / ⌘C, calling `markClean()` after a successful save or copy, the "Discard changes?"
   prompt on close, and the quit prompt using `isDirty` → 0020-annotation-export.
 - Persisting history across app launches (not required by the PRD).
+
+## Verification status
+
+- Verified on **2026-11-03**: `xcodegen generate` succeeded.
+- `xcodebuild -scheme Snapper -configuration Debug build`: **BUILD SUCCEEDED**.
+- `xcodebuild -scheme Snapper test`: **TEST SUCCEEDED** — **303 tests in 45 suites passed**,
+  including **28 new AnnotationDocumentTests** covering atomic edits, gesture coalescing,
+  selection snapshots, z-order, delegated hit-testing, no-op/cancel behavior, unique clean
+  revisions, empty-text removal, text-session coalescing and independent value copies.
+- No PRD or AGENTS.md change was needed; this pure model implements the existing behavior and
+  architecture. Window, hotkey and export integration remains in 0017–0020.
+- No GUI paths were manually verified.
+- [ ] not yet run by user — Confirm Snapper still launches to the menu bar as before.
