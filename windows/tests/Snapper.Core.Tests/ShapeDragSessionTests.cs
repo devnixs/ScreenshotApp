@@ -73,4 +73,19 @@ public sealed class ShapeDragSessionTests
         var session = new ShapeDragSession(Rectangle, new ShapeDragKind.Move(), new(20, 30), Bounds);
         Assert.Equal(new ShapeKind.Rectangle(new(100, 90, 40, 30)), session.Preview(new(500, 500), false).Kind);
     }
+
+    [Fact] public void PreviewsCommitOneHistoryStep()
+    {
+        var document = new AnnotationDocument(new(100, 100), 1);
+        var rectangle = Rectangle;
+        document.Add(rectangle); document.MarkClean(); document.Select(rectangle.Id);
+        var session = new ShapeDragSession(rectangle, new ShapeDragKind.Move(), new(0, 0), Bounds);
+        for (var i = 0; i < 100; i++) _ = session.Preview(new(i, i), false);
+        Assert.False(document.IsDirty);
+        var final = Assert.IsType<AnnotationShape>(session.Finish(new(10, 10), false));
+        document.Replace(final); document.Undo();
+        Assert.Equal(new[] { rectangle }, document.Shapes); Assert.False(document.IsDirty);
+        document.Redo(); Assert.Equal(new[] { final }, document.Shapes);
+        document.Undo(); document.Undo(); Assert.Empty(document.Shapes); Assert.False(document.CanUndo);
+    }
 }

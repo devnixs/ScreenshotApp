@@ -387,3 +387,20 @@ whatever earlier specs left it (0025's stub action). This spec changes no runtim
   changes?" prompt, the quit confirmation, and the "Unsaved annotations" shutdown block reason
   driven by `IsDirty` → 0043. Copy & Close → 0044.
 - Persisting history across launches (not required by the PRD).
+
+## Verification status
+
+Automated verification on 2026-11-03:
+
+- `dotnet build windows/Snapper.slnx -c Debug` passed with **0 warnings and 0 errors**.
+- `dotnet test windows/Snapper.slnx` passed **1,015 tests**, with **0 failures and 0 skips**.
+- Added **40 tests**: the 28 Swift document cases, nine Windows-specific cases, two additional
+  clone/notification regressions, and the deferred drag-preview history test from 0038.
+- `git diff --check` passed. No package, project, native, PRD, or AGENTS.md changes were needed.
+
+The immutable snapshot document, coalesced undo/redo, unique-revision dirty tracking, independent
+cloning, and final-state change notifications are covered by Core tests. This pure slice is not
+wired into the app yet, so no feature-specific GUI verification is needed or claimed.
+
+- [ ] not yet run by user (optional Windows 11 regression): Launch the Debug Windows app, confirm
+  the tray menu opens, and take a screenshot with Ctrl+Shift+4.
