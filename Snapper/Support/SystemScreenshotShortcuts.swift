@@ -14,11 +14,16 @@ enum SystemScreenshotShortcuts {
         var bindings: [CapturePurpose: KeyChord] = [:]
         for purpose in CapturePurpose.allCases {
             if let shortcut = KeyboardShortcuts.getShortcut(for: purpose.shortcutName) {
-                bindings[purpose] = KeyChord(
-                    keyCode: shortcut.carbonKeyCode, rawModifiers: UInt(shortcut.modifiers.rawValue)
-                )
+                bindings[purpose] = shortcut.keyChord
             }
         }
         return bindings
+    }
+}
+
+// KeyboardShortcuts exposes Carbon key codes, but symbolic-hotkey modifiers use Cocoa flags.
+extension KeyboardShortcuts.Shortcut {
+    var keyChord: KeyChord {
+        KeyChord(keyCode: carbonKeyCode, rawModifiers: UInt(modifiers.rawValue))
     }
 }

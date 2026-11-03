@@ -11,7 +11,8 @@ final class AppCoordinator: NSObject {
     private let capturer = ScreenshotCapturer()
     private let shutterSound = ShutterSound()
     private let screenshotLogger = Logger(subsystem: "com.thera-engineering.snapper", category: "screenshot")
-    private let settingsWindowController = SettingsWindowController()
+    private lazy var settingsModel = SettingsModel(settings: settings)
+    private lazy var settingsWindowController = SettingsWindowController(model: settingsModel)
     private lazy var onboardingWindowController = OnboardingWindowController(settings: settings)
     private var statusItemController: StatusItemController?
     private var modeMachine = AppModeMachine()

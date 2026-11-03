@@ -233,3 +233,37 @@ None. User confirmed on 2026-11-03: Reject bindings already assigned to another 
 - Using `playShutterSound`, `screenshotDestination`, and `saveFolderURL` during capture, plus the "Couldn't save to <folder>" alert itself: **0008**. Folder resolution and creation: **0002**.
 - Actually recording a microphone track: **0014** (this spec only owns the toggle, the permission flow, and the Info.plist key and entitlement).
 - A "Reset to defaults" button, a save-folder writability check at pick time, and any settings not listed in PRD §10.
+
+
+## Implementation notes
+
+- Settings and onboarding share `ShortcutCollision.collisions`; cleared bindings are represented by absent dictionary entries, matching 0006's existing adapter.
+- Added a shared KeyboardShortcuts-to-`KeyChord` adapter, using the library's Cocoa modifier flags to match symbolic-hotkey data.
+- General controls write through the existing observable `AppSettings`. Login state mirrors ServiceManagement rather than registering from the stored preference.
+- The existing Microphone System Settings link, usage description, and audio-input entitlement already satisfy this spec, so no signing or project settings changed. Regenerated the Xcode project for the new files.
+- Extracted microphone request intent/pending state so late completion after toggle-off and repeated toggle-on are unit-tested without invoking TCC.
+- Reused the existing save-folder alert and extracted its folder-panel configuration for the Settings sheet.
+- PRD already records the approved duplicate rejection. AGENTS.md now lists the pure Settings decisions among tested logic.
+
+## Verification status
+
+- Date: 2026-11-03 (Europe/Paris).
+- `xcodegen generate`: passed.
+- `xcodebuild -scheme Snapper -configuration Debug build`: **BUILD SUCCEEDED**.
+- `xcodebuild -scheme Snapper test`: **TEST SUCCEEDED** — 192 tests in 33 suites, zero failures.
+- No GUI, TCC permission, global-hotkey, or login-registration checks were performed. The app was not launched for manual verification.
+- Manual checks below are pending. Use an installed copy in `/Applications` for login-item checks. Preserve existing captures before testing missing-folder behavior; use an empty folder rather than deleting captures. Changing the app signature can reset Screen Recording permission.
+
+- [ ] not yet run by user — Open Settings via right-click and via Settings…; confirm one frontmost window, three tabs, and preserved tab selection when reopened.
+- [ ] not yet run by user — On a fresh preferences domain, confirm General defaults: login off, default Screenshots folder, Both, shutter sound on; microphone off.
+- [ ] not yet run by user — Choose/create a save folder in the sheet, change destination and sound, relaunch, and confirm persistence and screenshot output behavior.
+- [ ] not yet run by user — With an empty configured folder missing, Show in Finder recreates and opens it. A folder that cannot be created shows the shared error and Choose Folder… recovery.
+- [ ] not yet run by user — Enable launch at login from an installed copy; verify Login Items and relaunch after logout/login, then disable and verify removal.
+- [ ] not yet run by user — Change login registration externally; returning to Snapper updates the toggle, approval note, and Open Login Items link as appropriate.
+- [ ] not yet run by user — Rebind Screenshot and verify the global shortcut and live menu label immediately; clear a shortcut and verify its menu equivalent disappears.
+- [ ] not yet run by user — Assign another Snapper action's binding and verify rejection with the correct owner and unchanged prior binding; main-menu conflicts remain blocked.
+- [ ] not yet run by user — Accept a macOS screenshot conflict and verify inline warning and Open Keyboard Shortcuts; disable it externally and verify warning disappears on return. Check multiple conflicts and disabled/non-screenshot system shortcuts.
+- [ ] not yet run by user — From undetermined microphone permission, enable and allow access; verify on state and persistence. Verify late result does not override a later off intent.
+- [ ] not yet run by user — Deny microphone access; verify off state, denied note, correct Privacy pane, and no repeat prompt on another enable attempt.
+- [ ] not yet run by user — Revoke granted microphone permission externally; returning to Snapper switches off and shows the note. Reset permission and verify Settings opens without requesting, with the next enable asking again.
+- [ ] not yet run by user — Launch and open Settings with microphone recording off; verify neither action prompts for microphone permission.

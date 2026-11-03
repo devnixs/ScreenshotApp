@@ -52,6 +52,7 @@ Run the build and the tests before reporting work as done. Report failures as th
   - the annotation model (shapes, hit-testing, move/resize, undo/redo)
   - the geometry helpers (point↔pixel conversion, display selection, overlay pill placement)
   - file naming (timestamps, collision suffixes)
+  - Settings decisions (shortcut conflicts/duplicates, microphone authorization, launch-at-login state)
   - window candidate ordering/hit-testing, display assignment, and selection mode/press state
   
   Views only render the model and forward input to it.

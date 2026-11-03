@@ -25,6 +25,20 @@ enum ErrorAlerts {
         alert.addButton(withTitle: "Choose Folder…")
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+        let panel = folderPanel(directory: folder)
+        guard panel.runModal() == .OK, let chosen = panel.url else { return nil }
+        settings.saveFolderURL = chosen
+        return chosen
+    }
+
+    static func chooseFolder(current: URL, on window: NSWindow, completion: @escaping @MainActor (URL) -> Void) {
+        let panel = folderPanel(directory: current)
+        panel.beginSheetModal(for: window) { response in
+            if response == .OK, let chosen = panel.url { completion(chosen) }
+        }
+    }
+
+    private static func folderPanel(directory folder: URL) -> NSOpenPanel {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
@@ -38,8 +52,6 @@ enum ErrorAlerts {
             directory.deleteLastPathComponent()
         }
         panel.directoryURL = directory
-        guard panel.runModal() == .OK, let chosen = panel.url else { return nil }
-        settings.saveFolderURL = chosen
-        return chosen
+        return panel
     }
 }
