@@ -35,7 +35,7 @@ All new types live in `Snapper.Core` (`net10.0`, pure, no Windows/WPF/WinRT/inte
 
 ### Pure value types (Core, unit-tested)
 
-- **`windows/src/Snapper.Core/Annotate/Model/RgbaColor.cs`**: a port of `RGBAColor.swift`. `public readonly record struct RgbaColor` with `double Red, Green, Blue, Alpha`, each in `0…1`, sRGB.
+- **`windows/src/Snapper.Core/Annotate/Model/RgbaColor.cs`**: a port of `RGBAColor.swift`. `public readonly record struct RgbaColor` with `double R, G, B, Alpha`, each in `0…1`, sRGB.
   - The public constructor `RgbaColor(double red, double green, double blue, double alpha = 1)` **clamps** each component to `0…1`. A non-finite component becomes `0`, or `1` for alpha. This is a port of `RGBAColor.swift:9-18`. A `default(RgbaColor)` is transparent black, which is valid.
   - `public static bool TryCreateStrict(double r, double g, double b, double a, out RgbaColor color)` returns `false` when any component is non-finite or outside `0…1`. Storage uses it, so stored garbage falls back to the default instead of being clamped into another color (port of `RGBAColor.swift:24-40`).
   - `public static RgbaColor FromBytes(byte r, byte g, byte b, byte a = 255)` returns component `/ 255`. `public (byte R, byte G, byte B, byte A) ToBytes()` returns each component `Math.Round(c * 255, MidpointRounding.AwayFromZero)`. 0040 uses these for WPF `Color` and `COLORREF`.
@@ -302,3 +302,16 @@ All new types live in `Snapper.Core` (`net10.0`, pure, no Windows/WPF/WinRT/inte
 - Using the destination and shutter-sound values when capturing: **0031**. Using the microphone value and the privacy check: **0037**. The Recording tab's Format and Quality pickers, bitrate math, and GIF plans: **0045**, **0046**.
 - Swatch UI, the `ChooseColor` dialog, and writing back the last-used color and width: **0040**/**0041**. Extending the annotation model types: **0038**.
 - The macOS `onboardingDismissed` key: not applicable on Windows, which has no onboarding window (PRD §13.10).
+
+
+## Verification status
+
+Automated verification on 2026-11-03: `dotnet build windows/Snapper.slnx -c Debug` passed with **0 warnings and 0 errors**; `dotnet test windows/Snapper.slnx` passed **221 tests**, including **123 new tests**, with zero skips. The Core assembly platform-dependency smoke test remains green. PRD and AGENTS.md needed no changes; behavior and architecture follow their existing requirements.
+
+Implementation naming adjustment: C# cannot declare both an instance component and a static preset named `Red`, `Green`, or `Blue` on the same type. `RgbaColor` therefore exposes `R`, `G`, `B`, and `Alpha` components while preserving the specified `RgbaColor.Red` … `White` presets. The persisted component names remain `red`, `green`, `blue`, and `alpha`, unchanged. This is an internal API detail, with no product behavior change.
+
+GUI behavior has not been verified. On Windows 11:
+
+- [ ] not yet run by user: Back up any existing `%APPDATA%\Snapper` settings, start Snapper with that folder absent, and confirm the tray/menu work and construction creates no `settings.json`.
+- [ ] not yet run by user: With Snapper exited, create `%APPDATA%\Snapper\settings.json` containing `not json`, launch Snapper, and confirm normal tray startup without a crash or rewriting the corrupt file. Restore any backed-up settings afterwards.
+- [ ] not yet run by user: Optional until 0033 adds UI: temporarily set `Settings.RecordMicrophone = true` in a Debug startup, run once, and revert the temporary code. Confirm UTF-8 `settings.json` matches the pinned schema, includes `"recordMicrophone": true`, omits `saveFolder`, and leaves no `.tmp` sibling.
