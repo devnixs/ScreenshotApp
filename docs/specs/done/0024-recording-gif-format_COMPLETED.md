@@ -140,3 +140,23 @@ As a Snapper user, I can switch the recording format to GIF in Settings and pick
 - The temp-file pipeline, MP4 quality, lifecycle conversion stage, and quit/shortcut behavior during conversion — done in **0023**.
 - Custom palettes/dithering, frame-rate or size sliders, trimming, GIF-to-clipboard, and progress UI.
 - Capturing directly to GIF frames via `SCStreamOutput` (we keep `SCRecordingOutput` per `AGENTS.md`).
+
+## Verification status
+
+Automated verification on 2026-11-03: `xcodegen generate`, `xcodebuild -scheme Snapper -configuration Debug build`, and `xcodebuild -scheme Snapper test` all passed. The full suite passed **405 tests in 73 suites**, including GIF size/sampling/presentation decisions, per-format quality persistence, microphone gating, and four headless GIF encoder tests. The encoder tests check output dimensions, color order, ten frames per second, looping, sparse variable-frame timing, a held single frame, and invalid input. Compressed samples use CoreMedia's output presentation timestamps to account for H.264 reordering offsets; zero-sample drain markers are skipped.
+
+PRD §7, §10, and §12 already specify the implemented behavior. AGENTS.md's testability list now includes GIF sizing, frame sampling, and headless encoding.
+
+GUI behavior has not been verified. With Screen Recording permission granted:
+
+- [ ] not yet run by user: In Settings → Recording, confirm MP4/High defaults. Switch to GIF and confirm Medium and the disabled microphone toggle with “GIFs don't include sound.” Switch back to MP4 and confirm High and the previous microphone value return.
+- [ ] not yet run by user: With GIF Medium on Retina, record a five-second rectangle around 400 × 300 points with movement. Confirm Finder reveals a looping GIF around 400 × 300 pixels and five seconds long.
+- [ ] not yet run by user: Repeat the same area with GIF High. Confirm 800 × 600 pixels, smoother motion, and a larger file.
+- [ ] not yet run by user: Record a full-screen GIF at Low. Confirm the longest output side is 640 pixels.
+- [ ] not yet run by user: Record a window using Space and GIF Medium. Confirm only that window appears, with no recording pill or border.
+- [ ] not yet run by user: Enable Record microphone, switch to GIF, and record. Confirm no orange microphone indicator appears.
+- [ ] not yet run by user: Stop a thirty-second full-screen GIF High recording and immediately try ⌘⇧4 and the menu bar icon. Confirm they are ignored and the icon stays red until Finder reveals the GIF.
+- [ ] not yet run by user: Cancel a GIF recording. Confirm no new save-folder file or `Snapper-*` temporary file remains.
+- [ ] not yet run by user: Relaunch Snapper. Confirm GIF format and both formats' independent quality levels are retained.
+
+Rebuilding with a different signature can reset Screen Recording permission.

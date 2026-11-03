@@ -14,6 +14,7 @@ struct RecordingExportSettings: Equatable, Sendable {
 
 enum RecordingTranscode: Equatable, Sendable {
     case mp4(averageBitRate: Int)
+    case gif(GIFEncodingSettings, width: Int, height: Int)
 }
 
 struct RecordingOutputPlan: Equatable, Sendable {
@@ -23,8 +24,12 @@ struct RecordingOutputPlan: Equatable, Sendable {
 
     static func make(format: RecordingFormat, mp4Quality: RecordingQuality, gifQuality: RecordingQuality,
                      pixelWidth: Int, pixelHeight: Int, pointPixelScale: CGFloat) -> RecordingOutputPlan {
-        // 0024 adds GIF encoding; persisted GIF preferences temporarily use MP4 High.
-        guard format == .mp4 else { return RecordingOutputPlan(format: .mp4, transcode: nil) }
+        if format == .gif {
+            let settings = GIFEncodingSettings.forQuality(gifQuality)
+            let size = settings.outputPixelSize(sourceWidth: pixelWidth, sourceHeight: pixelHeight,
+                                               pointPixelScale: pointPixelScale)
+            return RecordingOutputPlan(format: .gif, transcode: .gif(settings, width: size.width, height: size.height))
+        }
         return RecordingOutputPlan(format: .mp4,
             transcode: MP4Bitrate.averageBitRate(pixelWidth: pixelWidth, pixelHeight: pixelHeight, quality: mp4Quality)
                 .map { .mp4(averageBitRate: $0) })

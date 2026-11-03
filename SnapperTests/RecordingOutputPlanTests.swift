@@ -29,8 +29,13 @@ struct RecordingOutputPlanTests {
         #expect(RecordingFormat.allCases.map(\.fileExtension) == ["mp4", "gif"])
         #expect(RecordingQuality.allCases.map(\.title) == ["High", "Medium", "Low"])
     }
-    @Test func gifIsDeferredTo0024() {
-        #expect(RecordingOutputPlan.make(format: .gif, mp4Quality: .low, gifQuality: .low,
-            pixelWidth: 100, pixelHeight: 100, pointPixelScale: 1) == RecordingOutputPlan(format: .mp4, transcode: nil))
+    @Test func gifPlansIgnoreMp4QualityAndUseStartingScale() {
+        for quality in RecordingQuality.allCases {
+            let plan = RecordingOutputPlan.make(format: .gif, mp4Quality: quality, gifQuality: .medium,
+                pixelWidth: 2880, pixelHeight: 1800, pointPixelScale: 2)
+            #expect(plan.format == .gif)
+            #expect(plan.finalExtension == "gif")
+            #expect(plan.transcode == .gif(.forQuality(.medium), width: 1440, height: 900))
+        }
     }
 }

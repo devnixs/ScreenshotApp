@@ -38,9 +38,18 @@ final class SettingsModel {
         get { settings.playShutterSound }
         set { settings.playShutterSound = newValue }
     }
-    var mp4Quality: RecordingQuality {
-        get { settings.mp4Quality }
-        set { settings.mp4Quality = newValue }
+    var recordingFormat: RecordingFormat {
+        get { settings.recordingFormat }
+        set { settings.recordingFormat = newValue }
+    }
+    var recordingQuality: RecordingQuality {
+        get { recordingFormat == .mp4 ? settings.mp4Quality : settings.gifQuality }
+        set {
+            switch recordingFormat {
+            case .mp4: settings.mp4Quality = newValue
+            case .gif: settings.gifQuality = newValue
+            }
+        }
     }
     var recordMicrophone: Bool { settings.recordMicrophone }
 

@@ -160,13 +160,16 @@ final class RecordingSession {
 
     private func convert(_ capture: URL) {
         guard let transcode = outputPlan.transcode else { return }
-        let converted = capture.deletingPathExtension().appendingPathExtension("out.mp4")
+        let converted = capture.deletingPathExtension().appendingPathExtension("out.\(outputPlan.finalExtension)")
         Task {
             do {
                 try await Task.detached(priority: .userInitiated) {
                     switch transcode {
                     case .mp4(let bitrate):
                         try await MP4Transcoder.transcode(input: capture, output: converted, averageBitRate: bitrate)
+                    case .gif(let settings, let width, let height):
+                        try await GIFEncoder.encode(input: capture, output: converted, settings: settings,
+                                                    width: width, height: height)
                     }
                 }.value
                 let folder = SaveFolder(url: finalURL.deletingLastPathComponent())
@@ -184,7 +187,9 @@ final class RecordingSession {
             } catch {
                 try? FileManager.default.removeItem(at: converted)
                 let saved = saveOriginal(capture)
-                send(.conversionFailed(.compression(error.localizedDescription), savedOriginal: saved))
+                let failure: RecordingFailure = outputPlan.format == .gif
+                    ? .gifConversion(error.localizedDescription) : .compression(error.localizedDescription)
+                send(.conversionFailed(failure, savedOriginal: saved))
             }
         }
     }
@@ -210,7 +215,7 @@ final class RecordingSession {
             let filter: SCContentFilter
             // Snapshot fresh preferences and availability once per recording, after content lookup.
             let microphone = MicrophoneCaptureInputs(
-                recordMicrophoneSetting: settings.recordMicrophone,
+                recordMicrophoneSetting: settings.recordMicrophone, format: exportSettings.format,
                 authorization: MicrophonePermission.authorization,
                 hasAudioInputDevice: MicrophonePermission.hasAudioInputDevice)
             let config: SCStreamConfiguration

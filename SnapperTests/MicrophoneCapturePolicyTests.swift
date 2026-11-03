@@ -7,7 +7,7 @@ struct MicrophoneCapturePolicyTests {
         for setting in [false, true] {
             for authorization in MicrophoneAuthorization.allCases {
                 for hasDevice in [false, true] {
-                    let inputs = MicrophoneCaptureInputs(recordMicrophoneSetting: setting,
+                    let inputs = MicrophoneCaptureInputs(recordMicrophoneSetting: setting, format: .mp4,
                         authorization: authorization, hasAudioInputDevice: hasDevice)
                     let captures = MicrophoneCapturePolicy.shouldCaptureMicrophone(inputs)
                     #expect(captures == (setting && authorization == .authorized && hasDevice))
@@ -18,23 +18,35 @@ struct MicrophoneCapturePolicyTests {
         #expect(enabledCount == 1)
     }
 
+    @Test func gifNeverCapturesMicrophone() {
+        for setting in [false, true] {
+            for authorization in MicrophoneAuthorization.allCases {
+                for device in [false, true] {
+                    #expect(!MicrophoneCapturePolicy.shouldCaptureMicrophone(.init(
+                        recordMicrophoneSetting: setting, format: .gif,
+                        authorization: authorization, hasAudioInputDevice: device)))
+                }
+            }
+        }
+    }
+
     @Test func testSettingOffNeverCaptures() {
         #expect(!MicrophoneCapturePolicy.shouldCaptureMicrophone(.init(
-            recordMicrophoneSetting: false, authorization: .authorized, hasAudioInputDevice: true)))
+            recordMicrophoneSetting: false, format: .mp4, authorization: .authorized, hasAudioInputDevice: true)))
     }
 
     @Test func testRevokedPermissionRecordsVideoOnly() {
         #expect(!MicrophoneCapturePolicy.shouldCaptureMicrophone(.init(
-            recordMicrophoneSetting: true, authorization: .denied, hasAudioInputDevice: true)))
+            recordMicrophoneSetting: true, format: .mp4, authorization: .denied, hasAudioInputDevice: true)))
     }
 
     @Test func testNotDeterminedDoesNotCapture() {
         #expect(!MicrophoneCapturePolicy.shouldCaptureMicrophone(.init(
-            recordMicrophoneSetting: true, authorization: .notDetermined, hasAudioInputDevice: true)))
+            recordMicrophoneSetting: true, format: .mp4, authorization: .notDetermined, hasAudioInputDevice: true)))
     }
 
     @Test func testNoInputDeviceDoesNotCapture() {
         #expect(!MicrophoneCapturePolicy.shouldCaptureMicrophone(.init(
-            recordMicrophoneSetting: true, authorization: .authorized, hasAudioInputDevice: false)))
+            recordMicrophoneSetting: true, format: .mp4, authorization: .authorized, hasAudioInputDevice: false)))
     }
 }

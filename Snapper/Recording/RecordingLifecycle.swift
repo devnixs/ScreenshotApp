@@ -9,6 +9,9 @@ struct RecordingFailure: Error, LocalizedError, Equatable, Sendable {
     static func compression(_ message: String) -> RecordingFailure {
         RecordingFailure(message: message, kind: .other, title: "Couldn't compress the recording")
     }
+    static func gifConversion(_ message: String) -> RecordingFailure {
+        RecordingFailure(message: message, kind: .other, title: "Couldn't create the GIF")
+    }
     var errorDescription: String? { message }
     static let timeout = RecordingFailure(message: "The recording didn't finish saving in time.", kind: .other)
 }

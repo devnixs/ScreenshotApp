@@ -80,13 +80,22 @@ struct SettingsView: View {
 
     private var recording: some View {
         Form {
-            Picker("MP4 quality", selection: $model.mp4Quality) {
+            Picker("Format", selection: $model.recordingFormat) {
+                ForEach(RecordingFormat.allCases, id: \.self) { format in
+                    Text(format.title).tag(format)
+                }
+            }.pickerStyle(.segmented)
+            Picker("Quality", selection: $model.recordingQuality) {
                 ForEach(RecordingQuality.allCases, id: \.self) { quality in
                     Text(quality.title).tag(quality)
                 }
             }.pickerStyle(.radioGroup)
-            Text("Medium and Low re-encode after you stop, for smaller files.").foregroundStyle(.secondary)
+            Text(RecordingSettingsPresentation.qualityCaption(format: model.recordingFormat)).foregroundStyle(.secondary)
             Toggle("Record microphone", isOn: Binding(get: { model.recordMicrophone }, set: { model.setRecordMicrophone($0) }))
+                .disabled(!RecordingSettingsPresentation.microphoneToggleEnabled(format: model.recordingFormat))
+            if let note = RecordingSettingsPresentation.microphoneNote(format: model.recordingFormat) {
+                Text(note).foregroundStyle(.secondary)
+            }
             if model.showsMicrophoneDeniedNote {
                 Text("Snapper doesn't have access to the microphone.").foregroundStyle(.secondary)
                 Button("Open System Settings", action: model.openMicrophoneSettings)

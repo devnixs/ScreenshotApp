@@ -113,7 +113,7 @@ extension RecordingConfigurationBuilderTests {
         [false, true].flatMap { setting in
             MicrophoneAuthorization.allCases.flatMap { authorization in
                 [false, true].map { device in
-                    MicrophoneCaptureInputs(recordMicrophoneSetting: setting,
+                    MicrophoneCaptureInputs(recordMicrophoneSetting: setting, format: .mp4,
                         authorization: authorization, hasAudioInputDevice: device)
                 }
             }
@@ -149,9 +149,9 @@ extension RecordingConfigurationBuilderTests {
     }
 
     @Test func testMicrophoneDoesNotAlterVideoSettings() {
-        let on = streamConfigurations(.init(recordMicrophoneSetting: true,
+        let on = streamConfigurations(.init(recordMicrophoneSetting: true, format: .mp4,
             authorization: .authorized, hasAudioInputDevice: true))
-        let off = streamConfigurations(.init(recordMicrophoneSetting: false,
+        let off = streamConfigurations(.init(recordMicrophoneSetting: false, format: .mp4,
             authorization: .authorized, hasAudioInputDevice: true))
         for (enabled, disabled) in zip(on, off) {
             #expect(enabled.width == disabled.width)
