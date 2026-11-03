@@ -32,12 +32,18 @@
         </TabItem>
         <TabItem Header="Recording" Tag="{x:Static core:SettingsTab.Recording}">
             <StackPanel Margin="16">
-                <TextBlock Text="MP4 quality" FontWeight="SemiBold" Margin="0,0,0,5" />
-                <RadioButton Content="{Binding Mp4HighTitle}" IsChecked="{Binding Mp4High}" Margin="0,3" GroupName="Mp4Quality" />
-                <RadioButton Content="{Binding Mp4MediumTitle}" IsChecked="{Binding Mp4Medium}" Margin="0,3" GroupName="Mp4Quality" />
-                <RadioButton Content="{Binding Mp4LowTitle}" IsChecked="{Binding Mp4Low}" Margin="0,3" GroupName="Mp4Quality" />
-                <TextBlock Text="{Binding Mp4QualityCaption}" Foreground="Gray" TextWrapping="Wrap" Margin="0,5,0,20" />
-                <CheckBox Content="Record microphone" IsChecked="{Binding RecordMicrophone}" />
+                <TextBlock Text="Format" FontWeight="SemiBold" Margin="0,0,0,5" />
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                    <RadioButton Content="{Binding FormatMp4Title}" IsChecked="{Binding FormatMp4}" GroupName="Format" Margin="0,0,16,0" />
+                    <RadioButton Content="{Binding FormatGifTitle}" IsChecked="{Binding FormatGif}" GroupName="Format" />
+                </StackPanel>
+                <TextBlock Text="Quality" FontWeight="SemiBold" Margin="0,0,0,5" />
+                <RadioButton Content="{Binding QualityHighTitle}" IsChecked="{Binding QualityHigh}" Margin="0,3" GroupName="Quality" />
+                <RadioButton Content="{Binding QualityMediumTitle}" IsChecked="{Binding QualityMedium}" Margin="0,3" GroupName="Quality" />
+                <RadioButton Content="{Binding QualityLowTitle}" IsChecked="{Binding QualityLow}" Margin="0,3" GroupName="Quality" />
+                <TextBlock Text="{Binding QualityCaption}" Foreground="Gray" TextWrapping="Wrap" Margin="0,5,0,20" />
+                <CheckBox Content="Record microphone" IsChecked="{Binding RecordMicrophone}" IsEnabled="{Binding MicrophoneEnabled}" />
+                <TextBlock Text="{Binding MicrophoneFormatNote}" Foreground="Gray" TextWrapping="Wrap" Margin="0,8,0,0" />
                 <StackPanel Margin="0,8,0,0" Visibility="{Binding ShowsMicrophoneDenied, Converter={StaticResource BoolVisibility}}">
                     <TextBlock Text="Snapper doesn't have access to the microphone." Foreground="Gray" TextWrapping="Wrap" />
                     <Button Content="Open Privacy Settings" HorizontalAlignment="Left" Margin="0,6,0,0" Click="OpenMicrophonePrivacy" Padding="10,3" />

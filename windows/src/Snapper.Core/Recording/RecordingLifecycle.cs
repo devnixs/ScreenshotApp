@@ -3,6 +3,7 @@ namespace Snapper.Core.Recording;
 
 public sealed record RecordingFailure(string Message, string Title = "Couldn't record the screen")
 {
+    public static RecordingFailure GifConversion(string message) => new(message, "Couldn't create the GIF");
     public static RecordingFailure Compression(string message) => new(message, "Couldn't compress the recording");
     public static readonly RecordingFailure Timeout = new("The recording didn't finish saving in time.");
     public static readonly RecordingFailure NoFrames = new("The screen didn't send any frames.");

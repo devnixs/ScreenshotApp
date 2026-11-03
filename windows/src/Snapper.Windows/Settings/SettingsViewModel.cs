@@ -74,14 +74,25 @@ internal sealed class SettingsViewModel : INotifyPropertyChanged, IDisposable
         Refresh();
     }
     public void RefreshOnActivate() { ReadLaunchAtLogin(); ReconcileMicrophone(); }
-    public IReadOnlyList<(Mp4Quality Value, string Title)> Mp4QualityOptions => RecordingSettingsPresentation.Mp4QualityOptions;
-    public string Mp4HighTitle => Mp4QualityOptions[0].Title;
-    public string Mp4MediumTitle => Mp4QualityOptions[1].Title;
-    public string Mp4LowTitle => Mp4QualityOptions[2].Title;
-    public string Mp4QualityCaption => RecordingSettingsPresentation.Mp4QualityCaption;
-    public bool Mp4High { get => settings.Mp4Quality == Mp4Quality.High; set { if (value) settings.Mp4Quality = Mp4Quality.High; } }
-    public bool Mp4Medium { get => settings.Mp4Quality == Mp4Quality.Medium; set { if (value) settings.Mp4Quality = Mp4Quality.Medium; } }
-    public bool Mp4Low { get => settings.Mp4Quality == Mp4Quality.Low; set { if (value) settings.Mp4Quality = Mp4Quality.Low; } }
+    public string FormatMp4Title => RecordingSettingsPresentation.FormatOptions[0].Title;
+    public string FormatGifTitle => RecordingSettingsPresentation.FormatOptions[1].Title;
+    public string QualityHighTitle => RecordingSettingsPresentation.QualityTitles[0];
+    public string QualityMediumTitle => RecordingSettingsPresentation.QualityTitles[1];
+    public string QualityLowTitle => RecordingSettingsPresentation.QualityTitles[2];
+    public bool FormatMp4 { get => settings.RecordingFormat == RecordingFormat.Mp4; set { if (value) settings.RecordingFormat = RecordingFormat.Mp4; } }
+    public bool FormatGif { get => settings.RecordingFormat == RecordingFormat.Gif; set { if (value) settings.RecordingFormat = RecordingFormat.Gif; } }
+    private int QualityIndex => RecordingSettingsPresentation.QualityIndex(settings.RecordingFormat, settings.Mp4Quality, settings.GifQuality);
+    private void SetQuality(int index)
+    {
+        var quality = RecordingSettingsPresentation.WithQualityIndex(settings.RecordingFormat, index, settings.Mp4Quality, settings.GifQuality);
+        settings.Mp4Quality = quality.Mp4; settings.GifQuality = quality.Gif;
+    }
+    public bool QualityHigh { get => QualityIndex == 0; set { if (value) SetQuality(0); } }
+    public bool QualityMedium { get => QualityIndex == 1; set { if (value) SetQuality(1); } }
+    public bool QualityLow { get => QualityIndex == 2; set { if (value) SetQuality(2); } }
+    public string QualityCaption => RecordingSettingsPresentation.QualityCaption(settings.RecordingFormat);
+    public bool MicrophoneEnabled => RecordingSettingsPresentation.MicrophoneToggleEnabled(settings.RecordingFormat);
+    public string? MicrophoneFormatNote => RecordingSettingsPresentation.MicrophoneNote(settings.RecordingFormat);
     public bool RecordMicrophone
     {
         get => microphoneRequest.IsPending && microphoneRequest.WantsMicrophone || settings.RecordMicrophone;

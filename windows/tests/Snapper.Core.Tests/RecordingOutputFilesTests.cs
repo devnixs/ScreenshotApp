@@ -36,4 +36,12 @@ public sealed class RecordingOutputFilesTests : IDisposable
         Assert.Throws<OperationCanceledException>(()=>RecordingOutputFiles.SaveOriginal(source,folder,Date,token:cancellation.Token));
         Assert.True(File.Exists(source)); Assert.Empty(Directory.GetFiles(folder));
     }
+    [Fact] public void GifCollisionKeepsGifExtensionAndOriginalContent()
+    {
+        var folder=Path.Combine(root,"gif-save"); var kind=Snapper.Core.Support.CaptureKind.RecordingGif;
+        var proposed=RecordingOutputFiles.Propose(folder,Date,kind); File.WriteAllBytes(proposed,[9]);
+        var result=RecordingOutputFiles.SaveOriginal(Source(),folder,Date,proposed,TestContext.Current.CancellationToken,kind);
+        Assert.EndsWith(" (2).gif",result); Assert.Equal(new byte[]{9},File.ReadAllBytes(proposed));
+        Assert.Equal(new byte[]{1,2,3,4},File.ReadAllBytes(result)); Assert.Equal(2,Directory.GetFiles(folder).Length);
+    }
 }

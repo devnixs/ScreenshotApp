@@ -4,11 +4,11 @@ namespace Snapper.Core.Recording;
 /// <summary>Portable file moves. Publish a complete sibling before deleting the source, including across volumes.</summary>
 public static class RecordingOutputFiles
 {
-    public static string Propose(string folder, DateTimeOffset startTime) =>
-        new SaveFolderPolicy(new PhysicalSaveFolderFileSystem()).UniqueFilePath(folder, CaptureKind.RecordingMp4, startTime, new FileNamer());
+    public static string Propose(string folder, DateTimeOffset startTime, CaptureKind kind = CaptureKind.RecordingMp4) =>
+        new SaveFolderPolicy(new PhysicalSaveFolderFileSystem()).UniqueFilePath(folder, kind, startTime, new FileNamer());
 
     public static string SaveOriginal(string source, string folder, DateTimeOffset startTime, string? preferredPath = null,
-        CancellationToken token = default)
+        CancellationToken token = default, CaptureKind kind = CaptureKind.RecordingMp4)
     {
         var fs = new PhysicalSaveFolderFileSystem();
         folder = new SaveFolderPolicy(fs).Prepare(folder);
@@ -24,12 +24,12 @@ public static class RecordingOutputFiles
                 output.Flush(flushToDisk: true);
             }
             token.ThrowIfCancellationRequested();
-            var destination = preferredPath ?? Propose(folder, startTime);
+            var destination = preferredPath ?? Propose(folder, startTime, kind);
             while (true)
             {
                 token.ThrowIfCancellationRequested();
                 try { File.Move(temporary, destination); break; }
-                catch (IOException) when (fs.EntryExists(destination)) { destination = Propose(folder, startTime); }
+                catch (IOException) when (fs.EntryExists(destination)) { destination = Propose(folder, startTime, kind); }
             }
             // A source deletion failure must not invalidate an already committed destination.
             TryDelete(source);

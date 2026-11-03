@@ -153,7 +153,7 @@ internal sealed class AppCoordinator : IDisposable
             var plan = exportSettings.Plan(configuration.PixelWidth, configuration.PixelHeight, configuration.Scale);
             try
             {
-                path = await Task.Run(() => plan.Converts ? RecordingOutputFiles.Propose(saveFolder, startDate) : RecordingFilePath.Reserve(saveFolder, startDate));
+                path = await Task.Run(() => plan.Converts ? RecordingOutputFiles.Propose(saveFolder, startDate, plan.FinalCaptureKind) : RecordingFilePath.Reserve(saveFolder, startDate));
             }
             catch (Exception error) when (ScreenshotOutputPlan.ClassifySaveFailure(error) == SaveFailureAlert.SaveFolder)
             {

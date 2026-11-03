@@ -28,10 +28,17 @@ public sealed class RecordingExportPlanTests
             Assert.Equal(new RecordingTranscode.Mp4(750_000),RecordingExportPlan.Make(RecordingFormat.Mp4,Mp4Quality.Low,gif,1000,500,scale).Transcode);
         }
     }
-    [Fact] public void PersistedGifTemporarilyUsesMp4Quality()
+    [Fact] public void GifPlansIgnoreMp4QualityAndUseGifCaptureKind()
     {
-        var plan=RecordingExportPlan.Make(RecordingFormat.Gif,Mp4Quality.Low,GifQuality.High,1000,500,2);
-        Assert.Equal(RecordingFormat.Mp4,plan.Format); Assert.Equal(new RecordingTranscode.Mp4(750_000),plan.Transcode);
+        foreach (var mp4 in Enum.GetValues<Mp4Quality>())
+        {
+            var plan = RecordingExportPlan.Make(RecordingFormat.Gif, mp4, GifQuality.Medium, 2880, 1800, 2);
+            Assert.Equal(RecordingFormat.Gif, plan.Format); Assert.True(plan.Converts);
+            Assert.Equal(new RecordingTranscode.Gif(new(GifEncodingSettings.ForQuality(GifQuality.Medium),1440,900)), plan.Transcode);
+            Assert.Equal(Snapper.Core.Support.CaptureKind.RecordingGif, plan.FinalCaptureKind);
+        }
+        Assert.Equal(Snapper.Core.Support.CaptureKind.RecordingMp4,
+            RecordingExportPlan.Make(RecordingFormat.Mp4,Mp4Quality.High,GifQuality.Low,100,100,1).FinalCaptureKind);
     }
     [Fact] public void ExportSettingsAreImmutableSnapshot()
     {

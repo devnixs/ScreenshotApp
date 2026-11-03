@@ -20,6 +20,7 @@ internal sealed class RecordingSession
     private readonly RecordingConfiguration configuration;
     private readonly DisplayInfo display;
     private readonly bool recordMicrophone;
+    private readonly RecordingFormat requestedFormat;
     private MicrophoneAudioSession? audio;
     private readonly WindowRecordingSource? window;
     private string outputPath;
@@ -43,7 +44,7 @@ internal sealed class RecordingSession
         Direct3D11Helper helper, DisplayChangeWatcher displays, AppSettings settings, Action onStarted, Action onStopping, Action onEnded, RecordingExportSettings exportSettings, DateTimeOffset startDate, WindowRecordingSource? window = null)
     {
         this.configuration = configuration; this.display = display; finalPath = this.outputPath = outputPath; this.window = window;
-        this.startDate = startDate;
+        this.startDate = startDate; requestedFormat = exportSettings.Format;
         exportPlan = exportSettings.Plan(configuration.PixelWidth, configuration.PixelHeight, configuration.Scale);
         this.helper = helper; this.displays = displays; recordMicrophone = settings.RecordMicrophone; this.onStarted = onStarted; this.onStopping = onStopping; this.onEnded = onEnded;
         startTimer = new DispatcherTimer { Interval = RecordingLifecycle.StartTimeout };
@@ -61,9 +62,10 @@ internal sealed class RecordingSession
         {
             try
             {
-                var paths = RecordingTempFiles.For(Path.GetTempPath(), Guid.NewGuid());
+                var id = Guid.NewGuid();
+                var paths = RecordingTempFiles.For(Path.GetTempPath(), id);
                 await Task.Run(() => Directory.CreateDirectory(RecordingTempFiles.Directory(Path.GetTempPath())));
-                outputPath = paths.Capture; convertedPath = paths.Output;
+                outputPath = paths.Capture; convertedPath = RecordingTempFiles.OutputFor(Path.GetTempPath(), id, exportPlan.Format);
             }
             catch (Exception error)
             {
@@ -163,10 +165,11 @@ internal sealed class RecordingSession
                 switch (plan.Transcode)
                 {
                     case RecordingTranscode.Mp4(var bitrate): await Mp4Transcoder.TranscodeAsync(capture, target, bitrate, conversionCancellation.Token); break;
+                    case RecordingTranscode.Gif(var gif): await GifEncoder.EncodeAsync(capture, target, gif, conversionCancellation.Token); break;
                     default: throw new InvalidOperationException("Unsupported recording conversion.");
                 }
                 conversionCancellation.Token.ThrowIfCancellationRequested();
-                var final = RecordingOutputFiles.SaveOriginal(target, SaveDirectory, startDate, finalPath, conversionCancellation.Token);
+                var final = RecordingOutputFiles.SaveOriginal(target, SaveDirectory, startDate, finalPath, conversionCancellation.Token, plan.FinalCaptureKind);
                 // Force may arrive during an atomic publish. Preserve the source recording instead of the converted file.
                 if (conversionCancellation.IsCancellationRequested) { RecordingOutputFiles.TryDelete(final); throw new OperationCanceledException(); }
                 return new ConversionResult(final, null, null);
@@ -175,7 +178,7 @@ internal sealed class RecordingSession
             {
                 RecordingOutputFiles.TryDelete(target);
                 var original = TrySaveOriginal(capture);
-                return new ConversionResult(null, original, RecordingFailure.Compression(error.Message));
+                return new ConversionResult(null, original, ConversionFailure(plan, error.Message));
             }
         });
         _ = ObserveConversionAsync(conversionWork);
@@ -185,8 +188,10 @@ internal sealed class RecordingSession
         var result = await work;
         if (forcedSessionEnd) return;
         if (result.FinalPath is { } final) Send(new RecordingEvent.ConversionFinished(final));
-        else Send(new RecordingEvent.ConversionFailed(result.Failure ?? RecordingFailure.Compression("The recording couldn't be converted."), result.OriginalPath));
+        else Send(new RecordingEvent.ConversionFailed(result.Failure ?? ConversionFailure(exportPlan, "The recording couldn't be converted."), result.OriginalPath));
     }
+    private static RecordingFailure ConversionFailure(RecordingExportPlan plan, string message) =>
+        plan.Format == RecordingFormat.Gif ? RecordingFailure.GifConversion(message) : RecordingFailure.Compression(message);
     private string SaveDirectory => Path.GetDirectoryName(finalPath) ?? throw new IOException("Missing recording save folder.");
     private string? TrySaveOriginal(string capture)
     {
@@ -220,7 +225,7 @@ internal sealed class RecordingSession
             var microphoneTask = Task.Run(() =>
             {
                 var inputs = new MicrophoneCaptureInputs(microphoneSetting, MicrophonePermission.Authorization,
-                    MicrophonePermission.HasAudioInputDevice, RecordingFormat.Mp4); // 0046 passes the snapshotted export format.
+                    MicrophonePermission.HasAudioInputDevice, requestedFormat);
                 if (!MicrophoneCapturePolicy.ShouldAttemptMicrophone(inputs)) return (Source: (MicrophoneSource?)null, Result: MicrophoneOpenResult.NoDevice);
                 var result = MicrophoneSource.TryOpen(out var microphone, validateFirstRead: true);
                 return (Source: microphone, Result: result);

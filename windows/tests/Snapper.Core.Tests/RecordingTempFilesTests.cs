@@ -28,4 +28,12 @@ public sealed class RecordingTempFilesTests
     }
     [Theory,InlineData(true,ForcedRecordingEndAction.CancelAndSaveOriginal),InlineData(false,ForcedRecordingEndAction.ExistingStopBehavior)]
     public void ForcedEndDecision(bool converting,ForcedRecordingEndAction action) => Assert.Equal(action,ForcedRecordingEndDecision.Decide(converting));
+    [Fact] public void GifOutputIsScratchDeletedByRecovery()
+    {
+        var root=Path.Combine(Path.GetTempPath(),"gif-temp"); var paths=RecordingTempFiles.For(root,Id);
+        var gif=RecordingTempFiles.OutputFor(root,Id,Snapper.Core.Settings.RecordingFormat.Gif);
+        Assert.Equal(Path.Combine(root,"Snapper",$"Snapper-{Id:N}-out.gif"),gif);
+        Assert.Equal(paths.Output,RecordingTempFiles.OutputFor(root,Id,Snapper.Core.Settings.RecordingFormat.Mp4));
+        Assert.Equal<RecordingRecoveryAction>([new RecordingRecoveryAction.Delete(gif)],RecordingTempFiles.RecoveryPlan([new(gif,20,DateTimeOffset.UtcNow)],DateTimeOffset.UtcNow));
+    }
 }

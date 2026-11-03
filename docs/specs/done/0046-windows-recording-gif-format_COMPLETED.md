@@ -232,3 +232,34 @@ As a Snapper user on Windows, I can switch the recording format to GIF in Settin
 - Custom palettes, global palettes, dithering options, inter-frame optimization (transparency/diff frames), fps or size sliders, trimming, GIF to clipboard, conversion progress UI.
 - Capturing frames directly to GIF without the temp MP4.
 - Packaging and the full §13.11 acceptance pass — **0047-windows-packaging-release**.
+
+
+## Verification status
+
+Automated verification on 2026-11-03: `dotnet build windows/Snapper.slnx -c Debug` passed with **0 warnings and 0 errors**, and `dotnet test windows/Snapper.slnx` passed **1,358 tests** with **0 failures and 0 skips** (62 added tests). Logs: `/tmp/snapper-0046-build.log` and `/tmp/snapper-0046-test.log`.
+
+Implemented the two-pass Media Foundation/WIC encoder, per-format settings, GIF microphone gating, format-aware output publication and stale-GIF-output cleanup. Core tests cover sizing at mixed monitor scales, sorted presentation timestamps, carried rounding and long-delay splitting, decoder cursor/crop/signed-stride rows, loop metadata, capture-kind mapping, settings presentation and GIF publication collisions. The existing favorable-input GIF microphone test remains green.
+
+Implementation details adapted to the delivered 0045 APIs:
+
+- `RecordingOutputFiles` accepts a capture kind for converted-file publication and collision re-resolution; save-original fallback keeps the MP4 default. Partial `-out.gif` files are recognized as scratch output by startup recovery.
+- Microphone gating uses the requested format snapshot even if temporary-directory failure falls back to recording an MP4, so a GIF request never opens the microphone. Switching the Settings format does not write its microphone value.
+- Native rows use the actual signed `IMF2DBuffer` pitch or `MF_MT_DEFAULT_STRIDE` and a tested Core row-copy helper. Decoded-frame padding is cropped before WIC scaling; backwards decoded timestamps are ignored, and the last decoded sample supplies any frames still owed at end of stream. Per-frame WIC objects are released, and source pixel memory remains pinned until its WIC bitmap is released.
+- The encoder uses canonical `/appext/Application` and `/appext/Data` query names from [Microsoft's WIC metadata reference](https://learn.microsoft.com/en-us/windows/win32/wic/-wic-native-image-format-metadata-queries), rather than the lowercase spellings in the design sketch. Signed RGB stride follows [Microsoft's image-stride reference](https://learn.microsoft.com/en-us/windows/win32/medfound/image-stride). No product behavior changed, and no PRD or AGENTS.md edit was needed.
+
+**Native GIF encoding, capture, audio suppression, playback and GUI behavior have not been run on Windows.** All Windows 11 manual checks remain pending (x64, and Arm64 if available):
+
+- [ ] not yet run by user: In Recording settings, confirm MP4/High defaults, GIF/Medium default, exact captions, disabled microphone with the GIF note, retained microphone choice and independent per-format quality levels when switching back.
+- [ ] not yet run by user: On a 150% monitor, record about 400×300 DIPs for five seconds with GIF Medium. Confirm Explorer selects the GIF, it is about 400×300 pixels, loops in Edge/Photos and lasts about five seconds.
+- [ ] not yet run by user: Repeat the area with GIF High; confirm about 600×450 pixels, smoother motion and a larger file.
+- [ ] not yet run by user: Record a full monitor with GIF Low; confirm the longest output side is 640 pixels or smaller without upscaling.
+- [ ] not yet run by user: Repeat Medium on a 100% monitor and a negative-origin monitor; confirm correct content and native-to-DIP sizing.
+- [ ] not yet run by user: Record a window with GIF Medium, then move/resize it across monitors with different scales. Confirm fixed GIF dimensions, expected letterboxing, window-only content, no pill/border and no padded bottom strip.
+- [ ] not yet run by user: With the stored microphone option on, record GIF and confirm no microphone-in-use icon. Switch to MP4 and confirm microphone capture resumes.
+- [ ] not yet run by user: Stop a long, full high-DPI GIF recording and immediately try the three shortcuts and both tray buttons. Confirm they do nothing during conversion, the tray remains red, and normal controls return after Explorer reveals the GIF.
+- [ ] not yet run by user: Cancel a GIF recording; confirm no final file and no `Snapper-*` temporary files remain.
+- [ ] not yet run by user: Record an unchanging screen for about twenty seconds; confirm the GIF is small, retains the held frame and has the correct total duration.
+- [ ] not yet run by user: Make the destination unwritable or remove its drive before Stop; confirm the GIF failure title and original-MP4 fallback when saving remains possible. Restore permissions and confirm temporary output cleanup.
+- [ ] not yet run by user: Restart Snapper and confirm the format and both quality levels persist.
+- [ ] not yet run by user: Sign out or shut down during GIF conversion; confirm the saving shutdown block. If forcing session end, confirm the original MP4 is preserved, and the next launch removes stale GIF conversion scratch output.
+- [ ] not yet run by user: Optionally record a static area for more than eleven minutes; confirm split long GIF delays retain the full playback duration and loop correctly.
