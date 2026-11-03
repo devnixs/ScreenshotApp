@@ -227,10 +227,17 @@ Recording". When I press Ctrl+Shift+5 again or click the tray icon, the recordin
     `MF_MT_FRAME_RATE` 30/1, `MF_MT_PIXEL_ASPECT_RATIO` 1/1, `MF_MT_INTERLACE_MODE` progressive,
     `MF_MT_AVG_BITRATE = configuration.VideoBitrate`, `MF_MT_MPEG2_PROFILE =
     eAVEncH264VProfile_High`, `MF_MT_YUV_MATRIX = MFVideoTransferMatrix_BT709`.
-  - Input type: `MFVideoFormat_RGB32` (memory layout B8G8R8A8/X8, which matches the WGC
-    `B8G8R8A8UIntNormalized` frames), same size/rate/aspect/interlace, `MF_MT_DEFAULT_STRIDE =
-    width × 4` (top-down). The sink writer inserts the RGB→NV12 color conversion (the hardware
-    video processor when available). `BeginWriting()`.
+  - Input type: `MFVideoFormat_ARGB32` for the GPU path, matching WGC's
+    `DXGI_FORMAT_B8G8R8A8_UNORM` textures; `MFVideoFormat_RGB32` for CPU memory buffers.
+    Both carry the same size/rate/aspect/interlace and `MF_MT_DEFAULT_STRIDE = width × 4`
+    (top-down). The allocator's probe texture is validated before capture starts. The sink
+    writer inserts RGB→NV12 conversion (the hardware video processor when available).
+    `BeginWriting()`.
+    **Implementation correction:** RGB32 maps to X8R8G8B8 rather than A8R8G8B8 in the
+    [Windows SDK definitions](https://github.com/microsoft/win32metadata/blob/main/generation/WinSDK/RecompiledIdlHeaders/um/mfapi.h).
+    [D3D11 copies require compatible formats](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-copysubresourceregion),
+    so using RGB32 for allocated GPU textures could produce an invalid copy. This technical
+    correction changes no user-facing behavior.
   - **Two-phase setup so 0037 can add audio:** `Create(...)` configures the video stream only and
     does **not** call `BeginWriting`; 0037 calls an `AddAudioStream(...)` method (added by 0037)
     in between; then `BeginWriting()` starts writing and sets `TimelineOrigin` (`long`, QPC time in
@@ -649,3 +656,40 @@ Recording". When I press Ctrl+Shift+5 again or click the tray icon, the recordin
 - System audio, highlighted clicks: PRD §2 non-goals. Copying recordings to the clipboard: never
   (§7.5).
 - Annotation "Unsaved annotations" shutdown block reason: **0043** (reuses `ShutdownBlocker`).
+
+## Verification status
+
+Automated verification on 2026-11-03: `dotnet build windows/Snapper.slnx -c Debug` passed with
+**0 warnings and 0 errors**; `dotnet test windows/Snapper.slnx` passed **747 tests**, including
+**62 new tests**, with no skips. The new tests port rectangle configuration (including mixed DPI,
+negative origins, clamping and midpoint/even rounding), QPC frame pacing and static hold timing,
+all pre-conversion lifecycle transitions, display-change decisions, deferred termination, and
+collision-safe final-path reservation. Existing app-mode tests already cover all recording and tray
+inputs, repeated stops and the contract for a future conversion phase.
+
+Implementation notes: recording reserves a final file name without replacing existing entries;
+WGC monitor/window item creation and borderless policy are shared with screenshots. GPU allocation
+uses ARGB32 to match WGC texture format (the correction documented above), with a reusable-staging
+CPU fallback. The dedicated MTA writer serializes sink calls and retains its device lease until
+native release. Deletion after cancel/failed start waits for actual writer completion even when a
+native timeout has already returned the app to idle. AGENTS.md records these ownership rules.
+PRD behavior is unchanged.
+
+GUI behavior has **not** been verified. All following checks need a Windows 11 GUI session:
+
+- [ ] not yet run by user: On a 150% monitor, press Ctrl+Shift+5 and select a rectangle; confirm immediate recording, red tray dot, and “Snapper — Recording” tooltip.
+- [ ] not yet run by user: During recording, press Ctrl+Shift+4, Ctrl+Shift+6 and Esc; confirm recording continues without another Snapper action.
+- [ ] not yet run by user: Move the cursor within the area for about five seconds, then stop with Ctrl+Shift+5; confirm Explorer selects `Recording <start time>.mp4` and the clipboard is unchanged.
+- [ ] not yet run by user: Play the MP4; verify cursor, correct content, no selection overlay, H.264, at most 30 fps, and native even pixel dimensions without rescaling.
+- [ ] not yet run by user: Record an unchanged area with the cursor outside it for ten seconds; confirm playback lasts approximately ten seconds.
+- [ ] not yet run by user: Record full 100% and 200% monitors; confirm native dimensions rounded down to even values.
+- [ ] not yet run by user: Stop separate recordings with left and right tray clicks; confirm no menu opens, Explorer reveals each file, then the normal icon/tooltip/menu return.
+- [ ] not yet run by user: Start two recordings within one second; confirm the second name has a collision suffix and the first file is preserved.
+- [ ] not yet run by user: Record a secondary monitor, then disconnect/disable it; confirm save/reveal and return to idle. Also change the recorded monitor's DPI, arrangement, or resolution; confirm stop/save. A work-area-only change should not stop recording.
+- [ ] not yet run by user: Choose an unwritable folder and select a recording area; confirm “Couldn't save to <full path>” with Choose Folder…, no recording starts, and choosing a folder applies to the next attempt.
+- [ ] not yet run by user: Fill a nearly full removable drive during recording; confirm the recording error alert and reveal of a non-empty partial file (or deletion of an empty one).
+- [ ] not yet run by user: Sign out/restart during recording; confirm Windows lists “Saving recording…” until finalization completes and the resulting MP4 plays after signing back in. Forced shutdown is best effort with a five-second writer wait.
+- [ ] not yet run by user: Use Space window mode for a partly covered window; confirm the current interim behavior records its fixed rectangle, including covering content.
+- [ ] not yet run by user: With GIF/Low/microphone preferences set through JSON or later Recording settings, confirm this slice still records video-only MP4 High until 0037/0045/0046.
+- [ ] not yet run by user: On a machine without a usable hardware H.264 path, confirm the software fallback records correctly; verify a refused borderless request still allows capture.
+- [ ] not yet run by user: Record moving content on a 144 Hz monitor; confirm roughly 30 fps playback, correct wall-clock duration, and a responsive tray during recording/finalization.

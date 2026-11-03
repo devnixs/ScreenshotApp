@@ -18,12 +18,13 @@ internal sealed class Direct3D11Helper : IDisposable
     private readonly object gate = new();
     private DeviceResources? resources;
     private bool disposed;
-    public DeviceLease Acquire()
+    public DeviceLease Acquire(bool videoSupport = false)
     {
         lock (gate)
         {
             ObjectDisposedException.ThrowIf(disposed, this);
-            resources ??= new DeviceResources();
+            if (resources is not null && videoSupport && !resources.VideoSupport) { resources.ReleaseReference(); resources = null; }
+            resources ??= new DeviceResources(videoSupport);
             resources.AddReference();
             return new DeviceLease(resources);
         }
@@ -42,6 +43,7 @@ internal sealed class Direct3D11Helper : IDisposable
         public IDirect3DDevice WinRtDevice => Resources.WinRtDevice;
         public ID3D11Device Device => Resources.Device;
         public ID3D11DeviceContext Context => Resources.Context;
+        public object ContextLock => Resources.ContextLock;
         // Returned native textures are owned by the caller (Marshal.ReleaseComObject).
         public ID3D11Texture2D GetTexture(IDirect3DSurface surface) => Resources.GetTexture(surface);
         public ID3D11Texture2D CreateStagingTexture(int width, int height) => Resources.CreateStagingTexture(width, height);
@@ -52,28 +54,32 @@ internal sealed class Direct3D11Helper : IDisposable
     internal sealed class DeviceResources
     {
         private int references = 1; // The helper owns one reference until Reset/Dispose.
-        private readonly object contextGate = new();
+        public object ContextLock { get; } = new();
+        public bool VideoSupport { get; }
         private readonly ID3D11Device device;
         private readonly ID3D11DeviceContext context;
         public IDirect3DDevice WinRtDevice { get; }
         public ID3D11Device Device => device;
         public ID3D11DeviceContext Context => context;
-        public unsafe DeviceResources()
+        public unsafe DeviceResources(bool videoSupport)
         {
+            VideoSupport = videoSupport;
+            var flags = D3D11_CREATE_DEVICE_FLAG.D3D11_CREATE_DEVICE_BGRA_SUPPORT | (videoSupport ? D3D11_CREATE_DEVICE_FLAG.D3D11_CREATE_DEVICE_VIDEO_SUPPORT : 0);
             var result = PInvoke.D3D11CreateDevice(null, D3D_DRIVER_TYPE.D3D_DRIVER_TYPE_HARDWARE, default,
-                D3D11_CREATE_DEVICE_FLAG.D3D11_CREATE_DEVICE_BGRA_SUPPORT, default, PInvoke.D3D11_SDK_VERSION,
+                flags, default, PInvoke.D3D11_SDK_VERSION,
                 out var createdDevice, out var createdContext);
             if (result.Failed)
             {
                 Release(createdContext); Release(createdDevice);
                 PInvoke.D3D11CreateDevice(null, D3D_DRIVER_TYPE.D3D_DRIVER_TYPE_WARP, default,
-                    D3D11_CREATE_DEVICE_FLAG.D3D11_CREATE_DEVICE_BGRA_SUPPORT, default, PInvoke.D3D11_SDK_VERSION,
+                    flags, default, PInvoke.D3D11_SDK_VERSION,
                     out createdDevice, out createdContext).ThrowOnFailure();
             }
             device = createdDevice; context = createdContext;
             try
             {
                 ((ID3D11Multithread)context).SetMultithreadProtected(true);
+                if (videoSupport) ((global::Windows.Win32.Graphics.Direct3D10.ID3D10Multithread)device).SetMultithreadProtected(true);
                 PInvoke.CreateDirect3D11DeviceFromDXGIDevice((IDXGIDevice)device, out var inspectable).ThrowOnFailure();
                 try
                 {
@@ -121,7 +127,7 @@ internal sealed class Direct3D11Helper : IDisposable
         }
         public unsafe CapturedImage CopySurface(IDirect3DSurface surface, PixelRect crop, double scale)
         {
-            lock (contextGate)
+            lock (ContextLock)
             {
                 ID3D11Texture2D? texture = null;
                 ID3D11Texture2D? staging = null;

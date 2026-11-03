@@ -61,6 +61,7 @@ internal sealed class TrayIconController : IDisposable
     public void ShowMenu()
     {
         var sinceClosed = menuClosedAt is { } closed ? Environment.TickCount64 - closed : (long?)null;
+        if (state != TrayIconState.Idle) return;
         if (!TrayMenuClickGate.ShouldOpenMenu(menu.Visible, sinceClosed, Forms.SystemInformation.DoubleClickTime)) return;
         PInvoke.SetForegroundWindow(new HWND(menu.Handle));
         menu.Show(Forms.Cursor.Position, Forms.ToolStripDropDownDirection.AboveLeft);
@@ -86,6 +87,8 @@ internal sealed class TrayIconController : IDisposable
         balloonClick = onClick;
         notifyIcon.ShowBalloonTip(10_000, title, body, Forms.ToolTipIcon.Warning);
     }
+
+    public void SetRecording(bool recording) => SetState(recording ? TrayIconState.Recording : TrayIconState.Idle);
 
     public void SetState(TrayIconState state)
     {

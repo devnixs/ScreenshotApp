@@ -1,5 +1,6 @@
 using System.Windows;
 using Snapper.Windows.App;
+using Snapper.Windows.Interop;
 using Forms = System.Windows.Forms;
 
 namespace Snapper.Windows;
@@ -30,6 +31,7 @@ public partial class SnapperApplication : Application
     {
         coordinator?.Dispose();
         instance?.Dispose();
+        MediaFoundationRuntime.Shutdown();
         base.OnExit(e);
     }
 }

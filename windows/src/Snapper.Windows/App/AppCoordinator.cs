@@ -1,4 +1,7 @@
 using System.Diagnostics;
+using Snapper.Core.Geometry;
+using Snapper.Core.Recording;
+using Snapper.Windows.Recording;
 using System.ComponentModel;
 using Snapper.Core.App;
 using Snapper.Core.Support;
@@ -21,6 +24,9 @@ internal sealed class AppCoordinator : IDisposable
     private readonly Dispatcher dispatcher = Dispatcher.CurrentDispatcher;
     private HotkeyManager? hotkeys;
     private bool disposed;
+    private RecordingSession? recording;
+    private readonly RecordingTerminationDecision termination = new();
+    private ShutdownBlocker? shutdownBlocker;
     private readonly SelectionOverlayController overlay;
     private readonly Direct3D11Helper d3d = new();
     private readonly ShutterSound shutterSound = new();
@@ -43,6 +49,7 @@ internal sealed class AppCoordinator : IDisposable
     public void Start()
     {
         if (tray is not null) return;
+        shutdownBlocker = new ShutdownBlocker(OnQueryEndSession, OnEndSession);
         tray = new TrayIconController(this);
         hotkeys = new HotkeyManager();
         hotkeys.Pressed += HotkeyPressed;
@@ -70,7 +77,7 @@ internal sealed class AppCoordinator : IDisposable
         {
             case AppModeAction.ShowOverlay(var purpose): BeginSelection(purpose); break;
             case AppModeAction.CompleteSelection: break; // BeginSelection owns the returned selection.
-            case AppModeAction.StopRecording: Debug.WriteLine("Snapper: Stop recording (not implemented until 0034)"); break;
+            case AppModeAction.StopRecording: StopRecording(); break;
             case AppModeAction.OpenMenu: tray?.ShowMenu(); break;
             case AppModeAction.None: break;
             default: throw new UnreachableException();
@@ -87,7 +94,8 @@ internal sealed class AppCoordinator : IDisposable
             if (disposed) return;
             if (result is null) { Send(new AppModeEvent.SelectionCancelled()); return; }
             Send(new AppModeEvent.SelectionFinished());
-            if (purpose == CapturePurpose.Screenshot) await TakeScreenshot(result);
+            if (purpose == CapturePurpose.Record) BeginRecording(result);
+            else if (purpose == CapturePurpose.Screenshot) await TakeScreenshot(result);
             else
             {
                 switch (result)
@@ -104,8 +112,6 @@ internal sealed class AppCoordinator : IDisposable
                     annotateForeground.Restore();
                 }
             }
-            // TODO(0034): start RecordingSession here.
-            if (purpose == CapturePurpose.Record) Send(new AppModeEvent.RecordingEnded());
         }
         catch (Exception error)
         {
@@ -113,6 +119,72 @@ internal sealed class AppCoordinator : IDisposable
             Send(new AppModeEvent.SelectionCancelled());
         }
     }
+    private void BeginRecording(SelectionResult selection)
+    {
+        var startDate = DateTimeOffset.Now;
+        DisplayInfo display;
+        RectD region;
+        try
+        {
+            switch (selection)
+            {
+                case RectSelection(var selectedDisplay, var rect): display = selectedDisplay; region = RectD.FromPixelRect(rect); break;
+                case WindowSelectionResult(_, var frame, _):
+                    // 0036: window selections temporarily record a fixed monitor rectangle, including covering windows.
+                    region = RectD.FromPixelRect(frame);
+                    display = WindowDisplayRule.Display(region, Displays.Current)
+                        ?? throw new InvalidOperationException("The window is no longer on a display.");
+                    if (DisplayGeometry.DisplayOverlapping(region, [display]) is null)
+                        throw new InvalidOperationException("The window is no longer on a display.");
+                    break;
+                default: throw new UnreachableException();
+            }
+            var configuration = RecordingConfigurationBuilder.Build(display, region);
+            string path;
+            try { path = RecordingFilePath.Reserve(Settings.SaveFolder, startDate); }
+            catch (Exception error) when (ScreenshotOutputPlan.ClassifySaveFailure(error) == SaveFailureAlert.SaveFolder)
+            {
+                Send(new AppModeEvent.RecordingEnded());
+                ErrorAlerts.ShowSaveFolderFailure(Settings.SaveFolder, error, Settings);
+                return;
+            }
+            // 0045/0046: format and quality are deliberately MP4 High until export conversion lands; 0037 adds microphone.
+            recording = new RecordingSession(configuration, display, path, d3d, Displays,
+                onStarted: () => { }, onStopping: () => { }, onEnded: RecordingEnded);
+            tray?.SetRecording(true);
+            shutdownBlocker?.SetReason(RecordingTerminationDecision.ShutdownBlockReason);
+            recording.Start();
+        }
+        catch (Exception error)
+        {
+            Debug.WriteLine($"Snapper: Starting recording: {error}");
+            recording = null;
+            Send(new AppModeEvent.RecordingEnded());
+            tray?.SetRecording(false); shutdownBlocker?.SetReason(null);
+            ErrorAlerts.ShowError("Couldn't record the screen", error.Message);
+        }
+    }
+    public void StopRecording() => recording?.Stop();
+    public void CancelRecording() => recording?.Cancel();
+    private void RecordingEnded()
+    {
+        recording = null;
+        Send(new AppModeEvent.RecordingEnded());
+        tray?.SetRecording(false); shutdownBlocker?.SetReason(null);
+        if (termination.RecordingEnded()) FinishExit();
+    }
+    private bool OnQueryEndSession()
+    {
+        if (recording is null) return true;
+        termination.Request(true); StopRecording(); return false;
+    }
+    private void OnEndSession()
+    {
+        if (recording is null) return;
+        StopRecording();
+        recording.WaitForWriter(TimeSpan.FromSeconds(5));
+    }
+
     private async Task TakeScreenshot(SelectionResult selection)
     {
         var date = DateTime.Now;
@@ -173,6 +245,11 @@ internal sealed class AppCoordinator : IDisposable
 
     public void Exit()
     {
+        if (termination.Request(recording is not null)) { StopRecording(); return; }
+        FinishExit();
+    }
+    private void FinishExit()
+    {
         settingsWindow?.AllowClose();
         Dispose();
         Application.Current.Shutdown();
@@ -194,6 +271,7 @@ internal sealed class AppCoordinator : IDisposable
             hotkeys.Dispose();
             hotkeys = null;
         }
+        shutdownBlocker?.Dispose(); shutdownBlocker = null;
         overlay.Cancel();
         Displays.Dispose();
         d3d.Dispose();
