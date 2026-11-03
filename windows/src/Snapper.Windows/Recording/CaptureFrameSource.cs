@@ -21,7 +21,7 @@ internal sealed class CaptureFrameSource : IDisposable
     private readonly Direct3D11CaptureFramePool pool;
     private readonly GraphicsCaptureSession session;
     private readonly RecordingConfiguration configuration;
-    private readonly RecordingFrameClock clock;
+    private RecordingFrameClock? clock;
     private readonly Mp4Writer writer;
     private bool stopped;
     private readonly Direct3D11Helper.DeviceLease device;
@@ -35,7 +35,6 @@ internal sealed class CaptureFrameSource : IDisposable
     {
         if (!GraphicsCaptureSession.IsSupported()) throw new ScreenshotCaptureException(ScreenshotCaptureErrorKind.NotSupported);
         this.configuration = configuration; this.writer = writer; this.device = device; this.window = window;
-        clock = new RecordingFrameClock(configuration.FrameIntervalTicks, writer.TimelineOrigin);
         if (window is not null)
         {
             if (!PInvoke.IsWindow(new HWND(window.Handle)) || PInvoke.GetWindowThreadProcessId(new HWND(window.Handle), out _) != window.ThreadId)
@@ -93,8 +92,11 @@ internal sealed class CaptureFrameSource : IDisposable
                             crop = WindowFrameCrop.SourceRect(size, lastWindowRect, lastExtendedFrame);
                         }
                         else crop = configuration.SourceBoxForFrame(content.Width, content.Height);
-                        if (crop is { IsEmpty: false } area && clock.Accept(time.Ticks) is { } sampleTime)
-                            writer.TryEnqueue(frame.Surface, area, sampleTime);
+                        if (crop is { IsEmpty: false } area)
+                        {
+                            clock ??= new RecordingFrameClock(configuration.FrameIntervalTicks, time.Ticks);
+                            if (clock.Accept(time.Ticks) is not null) writer.TryEnqueue(frame.Surface, area, time.Ticks);
+                        }
                     }
                 }
                 // The current frame must release its surface before recreating a resized window pool.
@@ -117,7 +119,7 @@ internal sealed class CaptureFrameSource : IDisposable
             stopped = true;
             pool.FrameArrived -= FrameArrived; item.Closed -= ItemClosed;
             session.Dispose(); pool.Dispose();
-            return clock.FinalFrameTime(stopTicks);
+            return clock?.FinalFrameTime(stopTicks) is not null ? stopTicks : null;
         }
     }
     public void Dispose() => Stop(MediaFoundationRuntime.QpcTicks);

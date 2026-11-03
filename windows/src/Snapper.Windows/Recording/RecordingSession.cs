@@ -3,6 +3,8 @@ using System.IO;
 using System.Windows.Threading;
 using Snapper.Core.Geometry;
 using Snapper.Core.Recording;
+using Snapper.Core.Settings;
+using Snapper.Core.Support;
 using Snapper.Windows.Capture;
 using Snapper.Windows.Interop;
 using Snapper.Windows.Support;
@@ -17,6 +19,8 @@ internal sealed class RecordingSession
     private readonly DisplayChangeWatcher displays;
     private readonly RecordingConfiguration configuration;
     private readonly DisplayInfo display;
+    private readonly AppSettings settings;
+    private MicrophoneAudioSession? audio;
     private readonly WindowRecordingSource? window;
     private readonly string outputPath;
     private readonly Action onStarted, onStopping, onEnded;
@@ -28,10 +32,10 @@ internal sealed class RecordingSession
     private Task? cleanup, startup, deletion;
     private bool ended;
     public RecordingSession(RecordingConfiguration configuration, DisplayInfo display, string outputPath,
-        Direct3D11Helper helper, DisplayChangeWatcher displays, Action onStarted, Action onStopping, Action onEnded, WindowRecordingSource? window = null)
+        Direct3D11Helper helper, DisplayChangeWatcher displays, AppSettings settings, Action onStarted, Action onStopping, Action onEnded, WindowRecordingSource? window = null)
     {
         this.configuration = configuration; this.display = display; this.outputPath = outputPath; this.window = window;
-        this.helper = helper; this.displays = displays; this.onStarted = onStarted; this.onStopping = onStopping; this.onEnded = onEnded;
+        this.helper = helper; this.displays = displays; this.settings = settings; this.onStarted = onStarted; this.onStopping = onStopping; this.onEnded = onEnded;
         startTimer = new DispatcherTimer { Interval = RecordingLifecycle.StartTimeout };
         startTimer.Tick += StartTimedOut;
         stopTimer = new DispatcherTimer { Interval = RecordingLifecycle.StopTimeout };
@@ -71,27 +75,56 @@ internal sealed class RecordingSession
         Direct3D11Helper.DeviceLease? acquired = null;
         Mp4Writer? createdWriter = null;
         CaptureFrameSource? createdSource = null;
+        MicrophoneSource? openedMicrophone = null;
+        MicrophoneAudioSession? createdAudio = null;
         try
         {
-            acquired = await Task.Run(() => helper.Acquire(videoSupport: true));
+            // Snapshot intent on the dispatcher, but check current privacy/device state on the MTA pool at every start.
+            var microphoneSetting = settings.RecordMicrophone;
+            var microphoneTask = Task.Run(() =>
+            {
+                var inputs = new MicrophoneCaptureInputs(microphoneSetting, MicrophonePermission.Authorization,
+                    MicrophonePermission.HasAudioInputDevice, RecordingFormat.Mp4); // 0046 passes the snapshotted export format.
+                if (!MicrophoneCapturePolicy.ShouldAttemptMicrophone(inputs)) return (Source: (MicrophoneSource?)null, Result: MicrophoneOpenResult.NoDevice);
+                var result = MicrophoneSource.TryOpen(out var microphone, validateFirstRead: true);
+                return (Source: microphone, Result: result);
+            });
+            var deviceTask = Task.Run(() => helper.Acquire(videoSupport: true));
+            try { await Task.WhenAll(microphoneTask, deviceTask); }
+            finally
+            {
+                if (deviceTask.IsCompletedSuccessfully) acquired = deviceTask.Result;
+                if (microphoneTask.IsCompletedSuccessfully) openedMicrophone = microphoneTask.Result.Source;
+            }
+            Debug.WriteLine($"Snapper: Microphone start: {microphoneTask.Result.Result}");
             startupCancellation.Token.ThrowIfCancellationRequested();
-            createdWriter = await Mp4Writer.CreateAsync(outputPath, configuration, acquired);
+            createdWriter = await Mp4Writer.CreateAsync(outputPath, configuration, acquired ?? throw new InvalidOperationException("Missing recording device."), openedMicrophone?.Format);
             createdWriter.FirstSampleWritten += FirstSampleWritten;
             createdWriter.Finished += WriterFinished;
             createdWriter.Failed += WriterFailed;
             startupCancellation.Token.ThrowIfCancellationRequested();
             await createdWriter.BeginWritingAsync();
+            if (openedMicrophone is not null && createdWriter.HasAudio)
+            {
+                createdAudio = new(openedMicrophone, createdWriter);
+                createdAudio.Start();
+            }
             startupCancellation.Token.ThrowIfCancellationRequested();
             createdSource = await Task.Run(() => CaptureFrameSource.CreateAsync(acquired, configuration, display, createdWriter, window));
             startupCancellation.Token.ThrowIfCancellationRequested();
-            device = acquired; writer = createdWriter; source = createdSource;
+            device = acquired; writer = createdWriter; source = createdSource; audio = createdAudio;
             createdSource.SourceClosed += SourceClosed; createdSource.Failed += SourceFailed;
             await Task.Run(createdSource.Start);
         }
         catch (Exception error)
         {
-            createdSource?.Dispose();
             createdWriter?.Abort();
+            await Task.Run(() =>
+            {
+                createdSource?.Dispose();
+                createdAudio?.Dispose();
+                if (createdAudio is null) openedMicrophone?.Dispose();
+            });
             if (acquired is not null)
             {
                 var toRelease = acquired; var pending = createdWriter;
@@ -120,11 +153,12 @@ internal sealed class RecordingSession
     });
     private void StopCapture()
     {
-        var activeSource = source; var activeWriter = writer;
+        var activeSource = source; var activeWriter = writer; var activeAudio = audio;
         var stop = MediaFoundationRuntime.QpcTicks;
+        activeAudio?.SetEnd(stop);
         _ = Task.Run(() =>
         {
-            try { activeWriter?.RequestFinish(activeSource?.Stop(stop)); }
+            try { var hold = activeSource?.Stop(stop); activeAudio?.Stop(stop); activeWriter?.RequestFinish(hold); }
             catch (Exception error) { Post(() => Send(new RecordingEvent.OutputFailed(new RecordingFailure(error.Message), activeWriter?.FileHasContent ?? false))); }
         });
     }
@@ -139,8 +173,8 @@ internal sealed class RecordingSession
         if (cleanup is not null) return cleanup;
         startupCancellation.Cancel();
         startTimer.Stop(); stopTimer.Stop(); displays.Changed -= DisplaysChanged;
-        var activeSource = source; var activeWriter = writer; var activeDevice = device;
-        source = null; device = null;
+        var activeSource = source; var activeWriter = writer; var activeDevice = device; var activeAudio = audio;
+        source = null; device = null; audio = null;
         if (activeSource is not null) { activeSource.SourceClosed -= SourceClosed; activeSource.Failed -= SourceFailed; }
         if (activeWriter is not null)
         {
@@ -151,6 +185,7 @@ internal sealed class RecordingSession
         {
             if (pendingStartup is not null) await pendingStartup;
             activeSource?.Dispose();
+            activeAudio?.Dispose();
             activeWriter?.Dispose();
             activeWriter?.Completed.Wait();
             activeDevice?.Dispose();

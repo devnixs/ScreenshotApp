@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using Microsoft.Win32;
@@ -40,6 +41,8 @@ internal sealed class SettingsViewModel : INotifyPropertyChanged, IDisposable
     private readonly Action suspend;
     private readonly Action resume;
     private LaunchAtLoginState launchAtLogin = new(false, null);
+    private readonly MicrophoneRequestState microphoneRequest = new();
+    private bool showsMicrophoneDenied, disposed;
     public Window? Window { get; set; }
     public IReadOnlyList<ShortcutRowViewModel> ShortcutRows { get; }
     public SettingsViewModel(AppSettings settings, HotkeyManager hotkeys, Action suspend, Action resume)
@@ -70,7 +73,48 @@ internal sealed class SettingsViewModel : INotifyPropertyChanged, IDisposable
         settings.LaunchAtLogin = launchAtLogin.IsOn;
         Refresh();
     }
-    public void RefreshOnActivate() => ReadLaunchAtLogin();
+    public void RefreshOnActivate() { ReadLaunchAtLogin(); ReconcileMicrophone(); }
+    public bool RecordMicrophone
+    {
+        get => microphoneRequest.IsPending && microphoneRequest.WantsMicrophone || settings.RecordMicrophone;
+        set => ToggleMicrophone(value);
+    }
+    public bool ShowsMicrophoneDenied => showsMicrophoneDenied;
+    private void ApplyMicrophone(MicrophoneToggleOutcome outcome)
+    {
+        showsMicrophoneDenied = outcome.ShowsDeniedNote;
+        settings.RecordMicrophone = outcome.StoredValue;
+        Refresh();
+    }
+    private async void ToggleMicrophone(bool requested)
+    {
+        microphoneRequest.UserToggled(requested);
+        var outcome = MicrophoneToggleDecision.UserToggled(requested, MicrophonePermission.Authorization);
+        // Mark pending before publishing the stored-false decision, keeping the checkbox on for the user's intent.
+        var probe = outcome.ShouldRequestAccess && microphoneRequest.BeginRequest();
+        ApplyMicrophone(outcome);
+        if (!probe) return;
+        var result = await MicrophonePermission.ProbeAsync();
+        var apply = microphoneRequest.FinishRequest();
+        if (!disposed && apply) ApplyMicrophone(MicrophoneToggleDecision.AccessRequestFinished(MicrophoneAccessMapping.ProbeGrantsAccess(result)));
+        else Refresh();
+    }
+    public void ReconcileMicrophone()
+    {
+        if (microphoneRequest.IsPending || disposed) return;
+        var status = MicrophonePermission.Authorization;
+        var outcome = MicrophoneToggleDecision.ReconcileOnAppear(settings.RecordMicrophone, status);
+        // Opening/activation can reconcile twice. Retain a known denial until access changes or the user toggles off.
+        if (showsMicrophoneDenied && status is MicrophoneAuthorization.Denied or MicrophoneAuthorization.Restricted)
+            outcome = MicrophoneToggleDecision.AccessRequestFinished(false);
+        ApplyMicrophone(outcome);
+    }
+    public void SettingsHidden() { microphoneRequest.UserToggled(false); Refresh(); }
+    public static void OpenMicrophonePrivacy()
+    {
+        try { Process.Start(new ProcessStartInfo("ms-settings:privacy-microphone") { UseShellExecute = true }); }
+        catch (Exception error) { ErrorAlerts.ShowError("Couldn't open Privacy Settings", error.Message); }
+    }
     public void ChooseSaveFolder()
     {
         var picker = new OpenFolderDialog
@@ -97,6 +141,8 @@ internal sealed class SettingsViewModel : INotifyPropertyChanged, IDisposable
     private void StatusesChanged() { foreach (var row in ShortcutRows) row.Refresh(); }
     public void Dispose()
     {
+        disposed = true;
+        microphoneRequest.UserToggled(false);
         settings.PropertyChanged -= SettingsChanged;
         hotkeys.StatusesChanged -= StatusesChanged;
     }

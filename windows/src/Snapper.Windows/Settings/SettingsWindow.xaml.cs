@@ -10,7 +10,7 @@ namespace Snapper.Windows.Settings;
 internal partial class SettingsWindow : Window
 {
     public bool AllowClose { get; set; }
-    public IReadOnlyCollection<SettingsTab> AvailableTabs { get; } = new[] { SettingsTab.General, SettingsTab.Shortcuts };
+    public IReadOnlyCollection<SettingsTab> AvailableTabs { get; } = new[] { SettingsTab.General, SettingsTab.Shortcuts, SettingsTab.Recording };
     public SettingsTab? SelectedTab
     {
         get => (Tabs.SelectedItem as TabItem)?.Tag as SettingsTab?;
@@ -25,6 +25,8 @@ internal partial class SettingsWindow : Window
         DataContext = model; model.Window = this;
         FocusManager.SetFocusedElement(this, Tabs);
         Activated += (_, _) => model.RefreshOnActivate();
+        IsVisibleChanged += (_, _) => { if (!IsVisible) model.SettingsHidden(); };
+        Tabs.SelectionChanged += (_, e) => { if (e.Source == Tabs && SelectedTab == SettingsTab.Recording) model.ReconcileMicrophone(); };
         PreviewMouseDown += (_, e) =>
         {
             // Blank labels/panels do not take keyboard focus by themselves.
@@ -63,5 +65,6 @@ internal partial class SettingsWindow : Window
     }
     private void ChooseFolder(object sender, RoutedEventArgs e) { if (DataContext is SettingsViewModel model) model.ChooseSaveFolder(); }
     private void OpenFolder(object sender, RoutedEventArgs e) { if (DataContext is SettingsViewModel model) model.OpenSaveFolder(); }
+    private void OpenMicrophonePrivacy(object sender, RoutedEventArgs e) => SettingsViewModel.OpenMicrophonePrivacy();
     private void OpenStartupApps(object sender, RoutedEventArgs e) => LaunchAtLogin.OpenStartupApps();
 }

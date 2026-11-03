@@ -158,8 +158,8 @@ internal sealed class AppCoordinator : IDisposable
                 ErrorAlerts.ShowSaveFolderFailure(Settings.SaveFolder, error, Settings);
                 return;
             }
-            // 0045/0046: format and quality are deliberately MP4 High until export conversion lands; 0037 adds microphone.
-            recording = new RecordingSession(configuration, display, path, d3d, Displays,
+            // 0045/0046: format and quality are deliberately MP4 High until export conversion lands.
+            recording = new RecordingSession(configuration, display, path, d3d, Displays, Settings,
                 onStarted: () =>
                 {
                     var recordedRect = window?.ExtendedFrame ?? new PixelRect(display.Bounds.X + configuration.SourceRect.X,

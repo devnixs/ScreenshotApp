@@ -218,3 +218,32 @@ As a Snapper user on Windows who turned on *Record microphone*, my MP4 recording
 - A microphone device picker, level meter, mute, following default-device changes mid-recording, and separate tracks: not in the PRD.
 - System/app audio capture (loopback): PRD §2 non-goal.
 - macOS-only items: `NSMicrophoneUsageDescription`, the audio-input entitlement, TCC prompts, and `tccutil`.
+
+
+## Verification status
+
+Automated verification on 2026-11-03: `dotnet build windows/Snapper.slnx -c Debug` passed with **0 warnings and 0 errors**; `dotnet test windows/Snapper.slnx` passed **912 tests**, including **64 new tests**, with no skips. Logs: `/tmp/snapper-0037-build.log` and `/tmp/snapper-0037-test.log`.
+
+The new Core tests cover the complete Windows microphone capture decision table, permission mapping and toggle/request state, AAC/PCM format choices, timestamp-domain detection, pre-origin/overlapping/end-clipped audio, fractional rates, large QPC values and drift correction. Existing recording configuration/lifecycle/termination tests remain green. The generated Windows SDK `MF_E_NO_CAPTURE_DEVICES_AVAILABLE` value is `0xC00DABE0`, matching the named Core mapping constant.
+
+Implementation details clarified during native review:
+
+- The existing video writer previously used `BeginWriting` time as its origin. It now uses the QPC timestamp of the first successfully written video frame, as required by this spec. Both audio and capture stop use `MFGetSystemTime()` in the same 100-ns QPC domain.
+- Recording setup performs one bounded validation `ReadSample` before adding AAC, so a first-read `E_ACCESSDENIED` produces a genuinely video-only file. The validation sample precedes T0 and is discarded. The Settings activation probe still opens and disposes without reading, requesting consent, or starting a recording. Actual microphone feeding starts after `BeginWriting`.
+- Stop publishes the audio end atomically on the dispatcher; microphone stopping, PCM writes and native teardown run off the dispatcher. Reader objects stay alive until an in-flight read exits. Audio writes and stream ticks use the existing sink-writer lock; write failures use the existing recording failure path. Native runtime behavior has not been tested on macOS.
+
+PRD and AGENTS.md already describe the delivered behavior and ownership/threading rules; no changes were needed.
+
+All Windows 11 GUI and microphone verification remains pending. Use the detailed commands and setup in the Manual verification section above:
+
+- [ ] not yet run by user: With the default microphone setting off, record and inspect the MP4: only H.264 video, no audio stream or microphone-in-use indicator.
+- [ ] not yet run by user: Allow microphone access, enable Record microphone in the new Recording tab, and reopen Settings: the choice persists without a prompt or denial note.
+- [ ] not yet run by user: Record speech/clapping; inspect AAC rate/channel metadata, playback sync, and the microphone indicator appearing only during capture.
+- [ ] not yet run by user: Run the five-minute clap/stopwatch test including at least ten seconds of static screen; verify drift stays within 100 ms and finalization completes.
+- [ ] not yet run by user: Play music through headphones while recording; confirm system audio is absent, and microphone-off files have no audio stream.
+- [ ] not yet run by user: Block desktop microphone access and global microphone access in turn; check the off toggle, denied note and Open Privacy Settings button, then confirm a stored-on recording is video-only with no prompt or alert.
+- [ ] not yet run by user: Disable all input devices and record with the setting on; confirm video-only output and no alert, then restore the devices.
+- [ ] not yet run by user: Unplug the default headset mid-recording; verify the full video and shorter partial audio save without an alert.
+- [ ] not yet run by user: Exercise Cancel, Stop and the existing deferred Exit/shutdown save paths with audio; verify cleanup, no cancelled file, and audio in saved output.
+- [ ] not yet run by user: Record a window with audio, including minimize/restore; verify held video and continuous synchronized audio.
+- [ ] not yet run by user: Across all recording-start checks, confirm no Windows consent prompt appears.

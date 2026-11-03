@@ -30,5 +30,14 @@
         <TabItem Header="Shortcuts" Tag="{x:Static core:SettingsTab.Shortcuts}">
             <StackPanel x:Name="ShortcutRows" Margin="16" />
         </TabItem>
+        <TabItem Header="Recording" Tag="{x:Static core:SettingsTab.Recording}">
+            <StackPanel Margin="16">
+                <CheckBox Content="Record microphone" IsChecked="{Binding RecordMicrophone}" />
+                <StackPanel Margin="0,8,0,0" Visibility="{Binding ShowsMicrophoneDenied, Converter={StaticResource BoolVisibility}}">
+                    <TextBlock Text="Snapper doesn't have access to the microphone." Foreground="Gray" TextWrapping="Wrap" />
+                    <Button Content="Open Privacy Settings" HorizontalAlignment="Left" Margin="0,6,0,0" Click="OpenMicrophonePrivacy" Padding="10,3" />
+                </StackPanel>
+            </StackPanel>
+        </TabItem>
     </TabControl>
 </Window>

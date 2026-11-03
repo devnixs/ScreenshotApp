@@ -25,7 +25,7 @@ internal static class MediaFoundationRuntime
     {
         lock (gate) { shutdownRequested = true; if (!started || writers > 0) return; var result = PInvoke.MFShutdown(); if (result.Failed) Debug.WriteLine($"Snapper: MFShutdown: {result}"); started = false; }
     }
-    public static long QpcTicks => (long)((decimal)Stopwatch.GetTimestamp() * TimeSpan.TicksPerSecond / Stopwatch.Frequency);
+    public static long QpcTicks => PInvoke.MFGetSystemTime();
     public static ulong Pack(uint high, uint low) => ((ulong)high << 32) | low;
     public static void SetSize(IMFAttributes attributes, Guid key, int width, int height) => attributes.SetUINT64(key, Pack((uint)width, (uint)height));
     public static void Release(object? value) { if (value is not null && Marshal.IsComObject(value)) Marshal.ReleaseComObject(value); }

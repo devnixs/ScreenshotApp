@@ -20,6 +20,7 @@ internal sealed class Mp4Writer : IDisposable
     private readonly string path;
     private readonly RecordingConfiguration configuration;
     private readonly Direct3D11Helper.DeviceLease device;
+    private readonly AudioFormatChoice? audio;
     private readonly BlockingCollection<(IMFSample Sample, long Time)> queue = new(8);
     private readonly object sinkGate = new(), allocatorGate = new(), acceptingGate = new();
     private readonly ManualResetEventSlim begin = new(false);
@@ -32,27 +33,32 @@ internal sealed class Mp4Writer : IDisposable
     private IMFSample? lastSample;
     private ID3D11Texture2D? staging, compositionTexture;
     private LetterboxCompositor? compositor;
-    private uint videoStream;
+    private uint videoStream, audioStream;
+    private long audioSamplesWritten, lastVideoTime, lastVideoTick;
+    private long originQpc = long.MinValue;
+    private Exception? audioFailure;
+    private bool finishing;
     private long samplesWritten;
     private long? holdTime;
     private volatile bool abort;
     private bool accepting = true;
     private bool disposed;
     public ManualResetEventSlim Completed { get; } = new(false);
-    public long TimelineOrigin { get; private set; }
+    public long? TimelineOriginQpc { get { var value = Interlocked.Read(ref originQpc); return value == long.MinValue ? null : value; } }
+    public bool HasAudio => audio is not null;
     public bool FileHasContent { get { try { return Interlocked.Read(ref samplesWritten) > 0 && new FileInfo(path).Length > 0; } catch (IOException) { return false; } } }
     public event Action? FirstSampleWritten;
     public event Action? Finished;
     public event Action<RecordingFailure, bool>? Failed;
-    private Mp4Writer(string path, RecordingConfiguration configuration, Direct3D11Helper.DeviceLease device)
+    private Mp4Writer(string path, RecordingConfiguration configuration, Direct3D11Helper.DeviceLease device, AudioFormatChoice? audio)
     {
-        this.path = path; this.configuration = configuration; this.device = device;
+        this.path = path; this.configuration = configuration; this.device = device; this.audio = audio;
         thread = new Thread(Run) { IsBackground = false, Name = "Snapper MP4 writer" };
         thread.SetApartmentState(ApartmentState.MTA);
         thread.Start();
     }
-    public static Task<Mp4Writer> CreateAsync(string path, RecordingConfiguration configuration, Direct3D11Helper.DeviceLease device) =>
-        new Mp4Writer(path, configuration, device).created.Task;
+    public static Task<Mp4Writer> CreateAsync(string path, RecordingConfiguration configuration, Direct3D11Helper.DeviceLease device, AudioFormatChoice? audio = null) =>
+        new Mp4Writer(path, configuration, device, audio).created.Task;
     public Task BeginWritingAsync() { begin.Set(); return began.Task; }
 
     private void Run()
@@ -70,7 +76,6 @@ internal sealed class Mp4Writer : IDisposable
             {
                 try { lock (sinkGate) RequireSink().BeginWriting(); }
                 catch when (allocator is not null) { ResetForFallback(); Create(false); lock (sinkGate) RequireSink().BeginWriting(); }
-                TimelineOrigin = QpcTicks;
                 began.TrySetResult();
                 foreach (var (sample, time) in queue.GetConsumingEnumerable())
                 {
@@ -84,8 +89,15 @@ internal sealed class Mp4Writer : IDisposable
                 }
                 if (!abort)
                 {
+                    if (Volatile.Read(ref audioFailure) is { } error) throw error;
                     if (holdTime is { } time && lastSample is not null) WriteHoldFrame(time);
-                    lock (sinkGate) RequireSink().Finalize();
+                    lock (sinkGate)
+                    {
+                        if (audio is { } format && audioSamplesWritten == 0 && samplesWritten > 0)
+                            WriteAudioSample(new(0, 0, Math.Max(1, format.SampleRate / configuration.FramesPerSecond), true), []);
+                        finishing = true;
+                        RequireSink().Finalize();
+                    }
                 }
             }
         }
@@ -94,7 +106,7 @@ internal sealed class Mp4Writer : IDisposable
             failure = error;
             created.TrySetException(error); began.TrySetException(error);
             if (!abort && Interlocked.Read(ref samplesWritten) > 0)
-                try { lock (sinkGate) sink?.Finalize(); } catch (Exception finalize) { Debug.WriteLine($"Snapper: Finalizing partial recording: {finalize.Message}"); }
+                try { lock (sinkGate) { finishing = true; sink?.Finalize(); } } catch (Exception finalize) { Debug.WriteLine($"Snapper: Finalizing partial recording: {finalize.Message}"); }
         }
         finally
         {
@@ -155,8 +167,30 @@ internal sealed class Mp4Writer : IDisposable
                 }
                 finally { Release(allocatorAttributes); }
             }
+            if (audio is { } format) AddAudioStream(format);
         }
         finally { Release(input); Release(output); Release(attributes); }
+    }
+    private void AddAudioStream(AudioFormatChoice format)
+    {
+        PInvoke.MFCreateMediaType(out var output).ThrowOnFailure();
+        IMFMediaType? input = null;
+        try
+        {
+            output.SetGUID(PInvoke.MF_MT_MAJOR_TYPE, PInvoke.MFMediaType_Audio);
+            output.SetGUID(PInvoke.MF_MT_SUBTYPE, PInvoke.MFAudioFormat_AAC);
+            output.SetUINT32(PInvoke.MF_MT_AUDIO_SAMPLES_PER_SECOND, (uint)format.SampleRate);
+            output.SetUINT32(PInvoke.MF_MT_AUDIO_NUM_CHANNELS, (uint)format.Channels);
+            output.SetUINT32(PInvoke.MF_MT_AUDIO_BITS_PER_SAMPLE, 16);
+            output.SetUINT32(PInvoke.MF_MT_AUDIO_AVG_BYTES_PER_SECOND, (uint)format.AacAverageBytesPerSecond);
+            output.SetUINT32(PInvoke.MF_MT_AAC_PAYLOAD_TYPE, 0);
+            output.SetUINT32(PInvoke.MF_MT_AAC_AUDIO_PROFILE_LEVEL_INDICATION, 0x29);
+            lock (sinkGate) RequireSink().AddStream(output, out audioStream);
+            PInvoke.MFCreateMediaType(out input).ThrowOnFailure();
+            MicrophoneSource.ConfigurePcm(input, format);
+            lock (sinkGate) RequireSink().SetInputMediaType(audioStream, input, null);
+        }
+        finally { Release(input); Release(output); }
     }
     private static unsafe void ValidateTexture(IMFSample sample)
     {
@@ -187,9 +221,62 @@ internal sealed class Mp4Writer : IDisposable
     }
     private void Write(IMFSample sample, long time)
     {
-        sample.SetSampleTime(time); sample.SetSampleDuration((long)Math.Round(configuration.FrameIntervalTicks));
-        lock (sinkGate) RequireSink().WriteSample(videoStream, sample);
+        var relative = time - (TimelineOriginQpc ?? time);
+        sample.SetSampleTime(relative); sample.SetSampleDuration((long)Math.Round(configuration.FrameIntervalTicks));
+        lock (sinkGate)
+        {
+            RequireSink().WriteSample(videoStream, sample);
+            Interlocked.CompareExchange(ref originQpc, time, long.MinValue);
+            lastVideoTime = relative;
+        }
         if (Interlocked.Increment(ref samplesWritten) == 1) FirstSampleWritten?.Invoke();
+    }
+    public void WriteAudio(AudioPlacement placement, ReadOnlySpan<byte> pcm)
+    {
+        if (audio is not { } format) return;
+        try
+        {
+            lock (sinkGate)
+            {
+                if (abort || finishing || sink is null || Completed.IsSet || Volatile.Read(ref audioFailure) is not null) return;
+                // Long gaps are represented by short silence buffers, never a multi-minute allocation.
+                var remaining = placement.FrameCount;
+                var written = 0;
+                while (remaining > 0)
+                {
+                    var frames = placement.IsSilence ? Math.Min(remaining, format.SampleRate / 10) : remaining;
+                    var offset = (long)written * TimeSpan.TicksPerSecond / format.SampleRate;
+                    WriteAudioSample(new(placement.OutputTimeTicks + offset, placement.SkipFrames + written, frames, placement.IsSilence), pcm);
+                    remaining -= frames; written += frames;
+                }
+            }
+        }
+        catch (Exception error)
+        {
+            lock (acceptingGate)
+            {
+                if (!abort && !Completed.IsSet) { audioFailure = error; accepting = false; queue.CompleteAdding(); }
+            }
+        }
+    }
+    private void WriteAudioSample(AudioPlacement placement, ReadOnlySpan<byte> pcm)
+    {
+        if (audio is not { } format) return;
+        var length = checked(placement.FrameCount * format.BlockAlign);
+        var bytes = placement.IsSilence ? new byte[length] : pcm.Slice(checked(placement.SkipFrames * format.BlockAlign), length).ToArray();
+        var sample = MemorySample(bytes);
+        try
+        {
+            var duration = (long)placement.FrameCount * TimeSpan.TicksPerSecond / format.SampleRate;
+            sample.SetSampleTime(placement.OutputTimeTicks); sample.SetSampleDuration(duration);
+            var end = placement.OutputTimeTicks + duration;
+            // Advancing video ticks prevents the MPEG-4 sink from buffering unbounded audio on static screens.
+            if (end - Math.Max(lastVideoTime, lastVideoTick) > TimeSpan.TicksPerSecond / 2)
+            { RequireSink().SendStreamTick(videoStream, end); lastVideoTick = end; }
+            RequireSink().WriteSample(audioStream, sample);
+            audioSamplesWritten++;
+        }
+        finally { Release(sample); }
     }
     public bool TryEnqueue(IDirect3DSurface surface, PixelRect crop, long time)
     {
