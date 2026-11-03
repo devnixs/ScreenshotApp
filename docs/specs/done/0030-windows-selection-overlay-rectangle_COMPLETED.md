@@ -255,7 +255,7 @@ All coordinates below are `Snapper.Core.Geometry` types from 0028. "Global" mean
   **`SelectionOverlayRenderStateTests.cs`** (measure = constant 60×20):
   1. `IdleTrackerIsEmptyEverywhere`: `For(A, idle tracker)` and `For(B, …)` == `Empty`.
   2. `At150PercentConvertsToLocalDips`: tracker down (2070,150), drag (2370,450) on [A,B] → `For(B)`: `SelectionDips == (100,100,200,200)`, `ReadoutText == "200 × 200"`, `ReadoutOriginDips == (312,312)`. `For(A) == Empty`.
-  3. `NegativeOriginAt200Percent`: down (-3800,-400), drag (-3000,0) on [A,C] → `For(C)`: `SelectionDips == (20,50,400,200)`, text `"400 × 200"`, origin `(412,262)`.
+  3. `NegativeOriginAt200Percent`: down (-3800,-400), drag (-3000,0) on [A,C] → `For(C)`: `SelectionDips == (20,50,400,200)`, text `"400 × 200"`, origin `(432,262)`.
   4. `At100PercentNearBottomRightFlips`: down (1000,500), drag (1915,1075) on [A] → `For(A)`: `SelectionDips == (1000,500,915,575)`, origin `(1843,1043)`.
   5. `CrossMonitorDragRendersOnlyOnStartMonitor`: down (1800,500) on [A,B], drag (2500,800) → `For(A).SelectionDips == (1800,500,120,300)`, and `For(B) == Empty`.
 
@@ -295,3 +295,30 @@ All coordinates below are `Snapper.Core.Geometry` types from 0028. "Global" mean
 - Starting a recording from the selection (0034-windows-recording-core). The pill and border use `CaptureExclusion` in 0035.
 - Opening the annotation window after a Ctrl+Shift+6 selection, and giving it focus (0040-windows-annotation-window-canvas).
 - Hotkey registration and `AppModeMachine` itself (0029), and display enumeration and the change watcher (0028).
+
+## Verification status
+
+Automated verification on 2026-11-03: `dotnet build windows/Snapper.slnx -c Debug` passed with **0 warnings and 0 errors**. `dotnet test windows/Snapper.slnx` passed **462 tests**, including **64 new cases**, with no skips. Logs: `/tmp/snapper-0030-build.log` and `/tmp/snapper-0030-test.log`.
+
+Implemented the pure tracker/session, monitor-local readout/render state and focus policy, plus WPF overlays, native mouse capture, capture exclusion/registry, focus restoration, display-change cancellation and the 50 ms close-before-result delay. The negative-origin render example's x-coordinate is corrected to 432: the cursor is at local x = 420 and the readout offset is 12. This corrects arithmetic only; the specified formula and PRD behavior are unchanged. Alt+F4 cancellation is posted after the WPF Closing callback returns to avoid recursively closing the same window. PRD and AGENTS.md required no changes.
+
+GUI behavior has not been verified. On Windows 11 with mixed-DPI monitors:
+
+- [ ] not yet run by user: Press Ctrl+Shift+4. Every monitor dims, including the taskbar, and the cursor is a crosshair everywhere. Press Esc: every overlay disappears, and no "Selection for" line is logged.
+- [ ] not yet run by user: Repeat step 1 with Ctrl+Shift+5, Ctrl+Shift+6, and each of the tray menu's Screenshot / Record / Annotate items.
+- [ ] not yet run by user: With the overlay open, press Alt+Tab and look at the taskbar: no overlay entry appears in either. Press Esc (click the overlay first if it lost focus).
+- [ ] not yet run by user: Ctrl+Shift+4 on the 100% monitor, drag a rectangle. The inside is clear with a thin white border, the rest dims, and the other monitors stay fully dimmed. The readout shows `W × H` and updates live. Release: every overlay closes, and the log shows `Screenshot`, the monitor id, and the rect in pixels.
+- [ ] not yet run by user: Repeat step 4 on the 150% monitor. The rectangle edges follow the cursor exactly (no offset or scale drift). A drag of about 200 × 100 DIPs shows roughly `200 × 100`, and the logged pixel rect is about 300 × 150.
+- [ ] not yet run by user: Start a drag near the right edge of one monitor and move onto the next (try 100% → 150% and 150% → 100%). The rectangle stops at the start monitor's edge, the readout stays on the start monitor, and the logged rect lies within the start monitor's pixel bounds.
+- [ ] not yet run by user: On the negative-origin monitor, drag a rectangle and move past its top-left corner. It clamps to that corner, and the logged x/y are negative and inside its bounds.
+- [ ] not yet run by user: Drag toward a monitor's bottom-right corner: the readout flips left/above the cursor and stays on screen.
+- [ ] not yet run by user: Click without moving: nothing happens, and the overlay stays open. Make a 2–3 px drag: same. Then make a normal drag: it's logged.
+- [ ] not yet run by user: With the overlay open, press Ctrl+Shift+4, Ctrl+Shift+5, and Ctrl+Shift+6: nothing changes. One Esc closes everything.
+- [ ] not yet run by user: During a drag, press Esc: every overlay closes. Open it again and press Alt+F4 instead: every overlay closes, and Snapper keeps running (the tray icon is still there).
+- [ ] not yet run by user: Focus a Notepad window, press Ctrl+Shift+4, then Esc: typing goes to Notepad. Repeat and finish a selection: typing goes to Notepad. Repeat with Ctrl+Shift+5: typing goes to Notepad.
+- [ ] not yet run by user: Focus Notepad, press Ctrl+Shift+6, and finish a selection. Nothing opens (the annotation window is 0040), and the log shows `Annotate`. Then press Ctrl+Shift+6 and Esc: typing goes to Notepad.
+- [ ] not yet run by user: With a maximized or full-screen app (for example F11 in Edge) in front, press Ctrl+Shift+4: the overlay covers it, and Esc works without clicking first.
+- [ ] not yet run by user: Open the overlay, then change a monitor's scale in Settings → System → Display (use the keyboard or a second device, or a timed script), or unplug/plug a monitor: every overlay closes, and the app is idle again. A new Ctrl+Shift+4 covers the new monitor set at the right size. Do the scale change once on the **primary** monitor and once on a **secondary** monitor. The secondary case exercises the overlay's `WM_DPICHANGED` → `DisplayChangeWatcher.Recheck()` path.
+- [ ] not yet run by user: Open the overlay and toggle taskbar auto-hide (or let it pop up): the overlay stays open.
+- [ ] not yet run by user: Open the Snipping Tool, set a 5-second delay, start a snip, then press Ctrl+Shift+4 within the delay. The resulting snip doesn't show Snapper's dimming (WDA_EXCLUDEFROMCAPTURE works). Press Esc.
+- [ ] not yet run by user: Ctrl+Shift+5, finish a selection: the log shows `Record`. Afterwards the tray icon has its idle look, and Ctrl+Shift+4 opens the overlay again.

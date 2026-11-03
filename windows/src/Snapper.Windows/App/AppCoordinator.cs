@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.ComponentModel;
 using Snapper.Core.App;
 using Snapper.Core.Support;
+using Snapper.Core.Capture;
 using System.Windows;
 using System.Windows.Controls;
 using Snapper.Core.Settings;
@@ -19,6 +20,7 @@ internal sealed class AppCoordinator : IDisposable
     private readonly Dispatcher dispatcher = Dispatcher.CurrentDispatcher;
     private HotkeyManager? hotkeys;
     private bool disposed;
+    private readonly SelectionOverlayController overlay;
     public AppMode Mode => modeMachine.Mode;
     internal HotkeyManager? Hotkeys => hotkeys;
 
@@ -32,6 +34,7 @@ internal sealed class AppCoordinator : IDisposable
     {
         Settings.SaveFailed += SettingsSaveFailed;
         Displays = new DisplayChangeWatcher(Dispatcher.CurrentDispatcher);
+        overlay = new SelectionOverlayController(Displays);
     }
     private static void SettingsSaveFailed(object? sender, SettingsSaveFailedEventArgs args) => Debug.WriteLine($"Snapper: {args.Exception}");
     public void Start()
@@ -63,18 +66,37 @@ internal sealed class AppCoordinator : IDisposable
         switch (action)
         {
             case AppModeAction.ShowOverlay(var purpose): BeginSelection(purpose); break;
-            case AppModeAction.CompleteSelection(var purpose): Debug.WriteLine($"Snapper: Complete selection {purpose} (not implemented yet)"); break;
+            case AppModeAction.CompleteSelection: break; // BeginSelection owns the returned selection.
             case AppModeAction.StopRecording: Debug.WriteLine("Snapper: Stop recording (not implemented until 0034)"); break;
             case AppModeAction.OpenMenu: tray?.ShowMenu(); break;
             case AppModeAction.None: break;
             default: throw new UnreachableException();
         }
     }
-    private void BeginSelection(CapturePurpose purpose)
+    private async void BeginSelection(CapturePurpose purpose)
     {
         tray?.CloseMenu();
-        Debug.WriteLine($"Overlay requested for {purpose} (not implemented until 0030)");
-        Send(new AppModeEvent.SelectionCancelled());
+        try
+        {
+            var result = await overlay.SelectRegionAsync(purpose);
+            if (disposed) return;
+            if (result is null) { Send(new AppModeEvent.SelectionCancelled()); return; }
+            Send(new AppModeEvent.SelectionFinished());
+            switch (result)
+            {
+                case RectSelection(var display, var rect):
+                    Trace.WriteLine($"Selection for {purpose}: display {display.DeviceName}, rect ({rect.X}, {rect.Y}, {rect.Width}, {rect.Height}) px");
+                    break;
+                default: throw new UnreachableException();
+            }
+            // TODO(0034): start RecordingSession here.
+            if (purpose == CapturePurpose.Record) Send(new AppModeEvent.RecordingEnded());
+        }
+        catch (Exception error)
+        {
+            Debug.WriteLine($"Snapper: Couldn't show selection: {error}");
+            Send(new AppModeEvent.SelectionCancelled());
+        }
     }
     private void HotkeyPressed(CapturePurpose purpose) => Send(new AppModeEvent.Shortcut(purpose));
     private void HotkeyFailed(IReadOnlyList<KeyChord> chords) => tray?.ShowWarningBalloon(
@@ -135,6 +157,7 @@ internal sealed class AppCoordinator : IDisposable
             hotkeys.Dispose();
             hotkeys = null;
         }
+        overlay.Cancel();
         Displays.Dispose();
         tray?.Dispose();
         tray = null;
