@@ -3,12 +3,13 @@ import os
 
 enum SaveFolderError: Error, Equatable, Sendable {
     case cannotCreate(URL)
+    case creationFailed(URL, String)
     case notWritable(URL)
     case notADirectory(URL)
 
     var folderURL: URL {
         switch self {
-        case .cannotCreate(let url), .notWritable(let url), .notADirectory(let url): url
+        case .cannotCreate(let url), .creationFailed(let url, _), .notWritable(let url), .notADirectory(let url): url
         }
     }
 }
@@ -29,22 +30,32 @@ struct SaveFolder: Sendable {
     /// Creates a missing folder on use and checks that it is a writable directory.
     @discardableResult
     func prepare() throws(SaveFolderError) -> URL {
+        do { return try prepareForWriting() }
+        catch let error as SaveFolderError {
+            if case .creationFailed(let url, _) = error { throw .cannotCreate(url) }
+            throw error
+        }
+        catch { throw .cannotCreate(url) }
+    }
+
+    /// Preserves the system error for capture alerts; the typed API remains available to callers.
+    func prepareForWriting() throws -> URL {
         let fileManager = FileManager.default
         var isDirectory: ObjCBool = false
         if fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory) {
             guard isDirectory.boolValue else {
-                throw .notADirectory(url)
+                throw SaveFolderError.notADirectory(url)
             }
         } else {
             do {
                 try fileManager.createDirectory(at: url, withIntermediateDirectories: true)
             } catch {
                 Self.logger.error("Couldn't create save folder: \(error.localizedDescription, privacy: .public)")
-                throw .cannotCreate(url)
+                throw SaveFolderError.creationFailed(url, error.localizedDescription)
             }
         }
         guard fileManager.isWritableFile(atPath: url.path) else {
-            throw .notWritable(url)
+            throw SaveFolderError.notWritable(url)
         }
         return url
     }
@@ -62,5 +73,16 @@ struct SaveFolder: Sendable {
             (try? FileManager.default.attributesOfItem(atPath: folder.appending(path: name).path)) != nil
         }
         return folder.appending(path: name, directoryHint: .notDirectory)
+    }
+}
+
+extension SaveFolderError: LocalizedError {
+    var errorDescription: String? {
+        switch self {
+        case .cannotCreate: "The save folder couldn't be created."
+        case .creationFailed(_, let details): details
+        case .notWritable: "You don't have permission to write to this folder."
+        case .notADirectory: "The save folder path is a file, not a folder."
+        }
     }
 }

@@ -5,9 +5,8 @@
 
 ## Context
 
-Not yet implemented. After 0007, pressing ⌘⇧4 opens the selection overlay on every display and a
-rectangle drag produces a `SelectionResult.rect(display:rect:)`, but `AppCoordinator` (0001) does
-nothing with it. This spec turns that result into an actual screenshot.
+Implemented by this spec. After 0007, pressing ⌘⇧4 opens the selection overlay on every display and a
+rectangle drag produces a `SelectionResult.rect(display:rect:)`, but `AppCoordinator` receives it. This spec turns that result into an actual screenshot.
 
 PRD behavior delivered here:
 
@@ -117,7 +116,7 @@ per my setting), with no trace of Snapper's overlay in the image.
 
 - **`Snapper/Capture/ScreenshotCapturer.swift`** — `@MainActor final class ScreenshotCapturer`
   (or a struct with `@MainActor` methods) exposing
-  `func capture(_ region: CaptureRegion) async throws -> CapturedImage`:
+  `func capture(_ region: CaptureRegion, pixelsPerPoint: CGFloat) async throws -> CapturedImage`:
   1. `let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)`.
      `onScreenWindowsOnly: false` makes sure Snapper is listed in `content.applications` even when
      none of its windows is currently on screen.
@@ -129,9 +128,9 @@ per my setting), with no trace of Snapper's overlay in the image.
      `SCContentFilter(display: display, excludingApplications: ourApp.map { [$0] } ?? [], exceptingWindows: [])`.
      Excluding the whole application (not individual windows) is the AGENTS.md rule and also covers
      any Snapper window that appears later (pill, annotation windows, alerts).
-  4. `SCStreamConfiguration`: `sourceRect = region.sourceRect`, `width = region.pixelWidth`,
-     `height = region.pixelHeight` (native pixels — this is what makes the PNG 2× on Retina),
-     `showsCursor = false` (see Open questions #1), `scalesToFit = false`,
+  4. `SCStreamConfiguration`: `sourceRect = region.sourceRect`, `width = region.pixelSize.width`,
+     `height = region.pixelSize.height` (native pixels — this is what makes the PNG 2× on Retina),
+     `showsCursor = false`, `scalesToFit = false`,
      `colorSpaceName = CGColorSpace.sRGB`, `capturesAudio = false`.
      **Color space decision — sRGB:** screenshots are mostly pasted into chat, web, docs and
      tickets, where untagged-or-sRGB is assumed; sRGB gives identical-looking output on every
@@ -142,7 +141,7 @@ per my setting), with no trace of Snapper's overlay in the image.
   5. `let cgImage = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)`.
      Because the method is `@MainActor`-isolated, execution resumes on the main actor after each
      `await`.
-  6. Return `CapturedImage(cgImage: cgImage, pixelsPerPoint: region.pixelsPerPoint)`.
+  6. Return `CapturedImage(cgImage: cgImage, pixelsPerPoint: pixelsPerPoint)` (the selected display’s backing scale).
   Errors propagate unchanged so `CaptureFailure(error)` can classify them.
 
 - **`Snapper/Support/Clipboard.swift`** — `@MainActor enum Clipboard { @discardableResult
@@ -184,7 +183,7 @@ per my setting), with no trace of Snapper's overlay in the image.
      app-level `SCContentFilter` exclusion is the second line of defense). Build
      `DisplayGeometry.captureRegion(for:on:)`, then run the pipeline in a `Task { @MainActor in … }`:
      - `let captureDate = Date()` taken immediately before capturing (§9: "capture time").
-     - `try await capturer.capture(region)`. On error: `CaptureFailure(error) == .permissionDenied`
+     - `try await capturer.capture(region, pixelsPerPoint: display.backingScale)`. On error: `CaptureFailure(error) == .permissionDenied`
        → show the onboarding window (0006) and stop; otherwise `ErrorAlerts.showCaptureFailure`
        and stop. No sound, no output on failure.
      - Success → if `settings.playShutterSound`, `shutterSound.play()`.
@@ -202,8 +201,7 @@ per my setting), with no trace of Snapper's overlay in the image.
        touched when the destination is clipboard-only.
      - Save failure → `ScreenshotOutputPlan.saveFailureAlert(for:)`: `.saveFolder` →
        `ErrorAlerts.showSaveFolderFailure`; if it returns a new folder, **retry the save once into
-       that folder** with the same `captureDate` and PNG data (pending confirmation — Open
-       questions #2); a second failure shows the same alert again with no further automatic retry
+       that folder** with the same `captureDate` and PNG data (confirmed by the user); a second failure shows the same alert again with no further automatic retry
        loop beyond what the user drives. `.generic` →
        `ErrorAlerts.showError(title: "Couldn't save screenshot", …)`.
      - Log successes/failures with `os.Logger(subsystem: "com.thera-engineering.snapper",
@@ -221,8 +219,13 @@ per my setting), with no trace of Snapper's overlay in the image.
   implicitly via `import`; add them to `project.yml` `dependencies: - sdk: …` only if the build
   needs it). Run `xcodegen generate` after adding files.
 
-- **PRD:** no PRD change in this spec. If the user confirms Open questions #1/#2, add those answers
-  to `docs/PRD.md` §6/§9 in the same change as the implementation.
+- **PRD:** the user-approved cursor, folder retry, and alert decisions are already recorded in
+  `docs/PRD.md` §6/§9. No additional behavior decision or AGENTS.md change was needed.
+- **Implementation detail:** `ScreenshotFileWriter` shares `SaveFolder` preparation and `FileNamer`,
+  guards writes with `.withoutOverwriting`, and retries a collision once. `SaveFolder.prepareForWriting`
+  preserves folder-creation system error details for alerts; its older typed `prepare()` contract stays
+  compatible. On failure of the single folder retry, Choose Folder… can update the next capture’s
+  setting but does not retry the current screenshot again.
 
 ## Acceptance criteria
 
@@ -245,7 +248,7 @@ per my setting), with no trace of Snapper's overlay in the image.
 - [ ] If `~/Documents/Screenshots` doesn't exist, it is created and the file saved into it (§12).
 - [ ] If the save folder isn't writable, the alert "Couldn't save to <folder>" appears with
       **Choose Folder…**; with *Both*, the image is on the clipboard anyway. Choosing a folder
-      updates the save folder setting (and saves the pending screenshot there — Open questions #2).
+      updates the save folder setting and saves the pending screenshot there once.
 - [ ] If Screen Recording permission is denied at capture time, the onboarding window opens and no
       alert is shown.
 - [ ] Any other capture failure shows a short alert with the error.
@@ -314,7 +317,10 @@ per my setting), with no trace of Snapper's overlay in the image.
       flipped/blank encode.
 - **Build check:** `xcodegen generate`, then `xcodebuild -scheme Snapper -configuration Debug build`
   and `xcodebuild -scheme Snapper test` succeed.
-- **Manual verification** (real GUI session, Screen Recording permission granted; can't be automated):
+- **Manual verification** (real GUI session, Screen Recording permission granted; can't be automated).
+  Until 0010 supplies Settings, quit Snapper before each `defaults write` and relaunch afterward so
+  typed settings reload. The keys are `screenshotDestination` (`file`, `clipboard`, `both`),
+  `playShutterSound` (Boolean), and `saveFolderPath` (absolute folder path):
   1. Defaults (destination *Both*, sound on). On the Retina built-in display press ⌘⇧4, drag a
      ~300×200 pt rectangle. Expect: shutter sound; a new `Screenshot <date> at <time>.png` in
      `~/Documents/Screenshots`. Run `sips -g pixelWidth -g pixelHeight -g dpiWidth "<file>"` →
@@ -325,13 +331,13 @@ per my setting), with no trace of Snapper's overlay in the image.
   4. Arrange an external display **left of** (or below) the main one in System Settings ▸ Displays.
      Drag on it → the image shows that display's content at the selected spot.
   5. Settings destination *Save to file* (via `defaults write com.thera-engineering.snapper
-     <screenshotDestination key> …` until 0010 lands, using the key/raw value from 0003): capture →
+     screenshotDestination -string file` until 0010 lands, using the key/raw value from 0003): capture →
      file saved; clipboard unchanged (copy some text first; it's still there).
   6. Destination *Copy to clipboard*: `mv ~/Documents/Screenshots ~/Documents/Screenshots.bak`,
      capture → clipboard has the image; `~/Documents/Screenshots` was **not** created. Restore.
-  7. Turn the shutter sound off (`defaults write … <playShutterSound key> -bool NO`), capture → no
+  7. Turn the shutter sound off (`defaults write … playShutterSound -bool NO`), capture → no
      sound; back on → sound.
-  8. Destination *Both*: `rm -rf ~/Documents/Screenshots` (move it aside if it has content),
+  8. Destination *Both*: move `~/Documents/Screenshots` aside without deleting existing captures,
      capture → folder recreated with the file in it.
   9. `chmod a-w ~/Documents/Screenshots`, capture with *Both* → alert "Couldn't save to
      ~/Documents/Screenshots" with **Choose Folder…**; ⌘V shows the image (clipboard copy
@@ -360,3 +366,35 @@ None. User confirmed on 2026-11-03: Screenshots exclude the cursor. Choosing a f
   ⌘S/⌘C there — 0020 (reuses `PNGEncoder`, `Clipboard`).
 - The selection overlay itself (dim, readout, Esc, display-change cancel) — 0007.
 - JPEG output, floating thumbnails, window shadows — PRD §2 non-goals.
+
+## Verification status
+
+- 2026-11-03: `xcodegen generate` succeeded.
+- 2026-11-03: `xcodebuild -scheme Snapper -configuration Debug build` — **BUILD SUCCEEDED**.
+- 2026-11-03: `xcodebuild -scheme Snapper test` — **TEST SUCCEEDED**, 156 tests in 25 suites passed.
+  New suites cover output destinations, save-error classification and paths, permission classification,
+  shutter sound fallback, PNG pixel/DPI/color round-trips, image point size, and file creation/collisions.
+  Existing geometry coverage includes 1×/2× displays, mixed scales, negative origins, fractional points,
+  display edges, and the exact Retina source-rect example in this spec.
+- No GUI capture, hotkey, TCC, pasteboard, sound, or modal UI verification was performed.
+- No PRD or AGENTS.md edits were needed: the approved decisions were already recorded.
+
+Manual checks (use the detailed procedure in Test plan above):
+
+- [ ] Not yet run by user: default Retina capture saves and copies, with native pixels and 144 DPI.
+- [ ] Not yet run by user: Preview output matches selection, with no overlay, Snapper windows, or cursor.
+- [ ] Not yet run by user: external 1× capture has native pixels and 72 DPI.
+- [ ] Not yet run by user: capture on a display left of or below the main display uses the correct area.
+- [ ] Not yet run by user: file-only destination preserves the previous clipboard contents.
+- [ ] Not yet run by user: clipboard-only destination copies without creating the save folder.
+- [ ] Not yet run by user: shutter sound respects its setting and capture failures remain silent.
+- [ ] Not yet run by user: a missing save folder is created for file output.
+- [ ] Not yet run by user: unwritable-folder alert includes its abbreviated path and error details;
+  clipboard output survives; Choose Folder updates the setting and saves the pending screenshot once;
+  Cancel stops; a failed retry shows an alert without another pending-image retry.
+- [ ] Not yet run by user: two captures within one second preserve both files with a collision suffix.
+- [ ] Not yet run by user: denied or revoked Screen Recording permission opens onboarding without a capture alert.
+- [ ] Not yet run by user: Annotate still logs without output, and Record remains unchanged.
+
+Rebuilding with a different signature can reset Screen Recording permission; check permission first if
+capture returns blank images or errors.
