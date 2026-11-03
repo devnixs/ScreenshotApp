@@ -24,10 +24,16 @@ struct FileNamerTests {
     }
 
     @Test func recordingNameFormat() {
-        #expect(FileNamer(timeZone: paris).fileName(for: .recording, date: date()) ==
+        #expect(FileNamer(timeZone: paris).fileName(for: .recording(.mp4), date: date()) ==
                 "Recording 2026-11-02 at 19.18.04.mp4")
     }
 
+    @Test func gifNameAndCollision() {
+        let base = "Recording 2026-11-02 at 19.18.04"
+        let namer = FileNamer(timeZone: paris)
+        #expect(namer.fileName(for: .recording(.gif), date: date()) == "\(base).gif")
+        #expect(namer.uniqueFileName(for: .recording(.gif), date: date()) { $0 == "\(base).gif" } == "\(base) (2).gif")
+    }
     @Test func baseNameHasNoExtension() {
         #expect(FileNamer(timeZone: paris).baseName(for: .screenshot, date: date()) ==
                 "Screenshot 2026-11-02 at 19.18.04")
@@ -99,7 +105,7 @@ struct FileNamerTests {
     }
 
     @Test func collisionPreservesExtension() {
-        #expect(FileNamer(timeZone: paris).uniqueFileName(for: .recording, date: date()) {
+        #expect(FileNamer(timeZone: paris).uniqueFileName(for: .recording(.mp4), date: date()) {
             $0 == "Recording 2026-11-02 at 19.18.04.mp4"
         } == "Recording 2026-11-02 at 19.18.04 (2).mp4")
     }

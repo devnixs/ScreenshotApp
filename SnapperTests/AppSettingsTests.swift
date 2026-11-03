@@ -19,6 +19,9 @@ struct AppSettingsTests {
             #expect(settings.saveFolderURL.path == SaveFolder.defaultURL.path)
             #expect(settings.screenshotDestination == .both)
             #expect(settings.playShutterSound)
+            #expect(settings.recordingFormat == .mp4)
+            #expect(settings.mp4Quality == .high)
+            #expect(settings.gifQuality == .medium)
             #expect(!settings.recordMicrophone)
             #expect(!settings.onboardingDismissed)
             #expect(settings.annotationColor == .red)
@@ -49,6 +52,25 @@ struct AppSettingsTests {
         for value in [ScreenshotDestination.file, .clipboard] { roundTrip(\.screenshotDestination, value) }
     }
     @Test func shutterSoundRoundTrip() { roundTrip(\.playShutterSound, false) }
+    @Test func recordingPreferencesRoundTrip() {
+        roundTrip(\.recordingFormat, .gif)
+        for quality in RecordingQuality.allCases {
+            roundTrip(\.mp4Quality, quality)
+            roundTrip(\.gifQuality, quality)
+        }
+    }
+    @Test func invalidRecordingPreferencesFallBackWithoutWriting() {
+        withDefaults { defaults in
+            for key in ["recordingFormat", "mp4Quality", "gifQuality"] { defaults.set("ultra", forKey: key) }
+            let settings = AppSettings(defaults: defaults)
+            #expect(settings.recordingFormat == .mp4)
+            #expect(settings.mp4Quality == .high)
+            #expect(settings.gifQuality == .medium)
+            for key in ["recordingFormat", "mp4Quality", "gifQuality"] {
+                #expect(defaults.string(forKey: key) == "ultra")
+            }
+        }
+    }
     @Test func microphoneRoundTrip() { roundTrip(\.recordMicrophone, true) }
     @Test func onboardingRoundTrip() { roundTrip(\.onboardingDismissed, true) }
     @Test func colorRoundTrip() {
@@ -137,7 +159,8 @@ struct AppSettingsTests {
     @Test func keyRawValues() {
         let keys = AppSettings.Key.allCases.map(\.rawValue)
         #expect(keys == ["launchAtLogin", "saveFolderPath", "screenshotDestination", "playShutterSound",
-                         "recordMicrophone", "onboardingDismissed", "annotationColor", "annotationStrokeWidth"])
+                         "recordMicrophone", "onboardingDismissed", "annotationColor", "annotationStrokeWidth",
+                         "recordingFormat", "mp4Quality", "gifQuality"])
         #expect(Set(keys).count == keys.count)
     }
 

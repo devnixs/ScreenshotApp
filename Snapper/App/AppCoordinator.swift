@@ -103,9 +103,12 @@ final class AppCoordinator: NSObject {
         do {
             let folder = SaveFolder(url: settings.saveFolderURL)
             _ = try folder.prepareForWriting()
-            let url = try folder.uniqueFileURL(for: .recording, date: startDate)
+            let exportSettings = RecordingExportSettings(format: settings.recordingFormat,
+                mp4Quality: settings.mp4Quality, gifQuality: settings.gifQuality)
+            let initialPlan = exportSettings.plan(pixelWidth: 2, pixelHeight: 2, pointPixelScale: 1)
+            let url = try folder.uniqueFileURL(for: .recording(initialPlan.format), date: startDate)
             let session = RecordingSession(
-                source: source, outputURL: url, settings: settings,
+                source: source, finalURL: url, startDate: startDate, exportSettings: exportSettings, settings: settings,
                 showOnboarding: { [weak self] in self?.showOnboarding() },
                 onStarted: { [weak self] in
                     guard let self else { return }

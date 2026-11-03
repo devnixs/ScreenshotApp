@@ -30,6 +30,10 @@ enum RecordingSource {
 final class RecordingSession {
     let source: RecordingSource
     let outputURL: URL
+    private let finalURL: URL
+    private let startDate: Date
+    private let exportSettings: RecordingExportSettings
+    private var outputPlan: RecordingOutputPlan
     private let settings: AppSettings
     private let onEnded: @MainActor () -> Void
     private let onStarted: @MainActor () -> Void
@@ -46,20 +50,27 @@ final class RecordingSession {
         Task { @MainActor in self?.receive(callback) }
     }
 
-    init(source: RecordingSource, outputURL: URL, settings: AppSettings,
+    init(source: RecordingSource, finalURL: URL, startDate: Date,
+         exportSettings: RecordingExportSettings, settings: AppSettings,
          showOnboarding: @escaping @MainActor () -> Void,
          onStarted: @escaping @MainActor () -> Void, onStopping: @escaping @MainActor () -> Void,
          onEnded: @escaping @MainActor () -> Void) {
         self.settings = settings
         self.source = source
-        self.outputURL = outputURL
+        self.finalURL = finalURL
+        self.startDate = startDate
+        self.exportSettings = exportSettings
+        let initialPlan = exportSettings.plan(pixelWidth: 2, pixelHeight: 2, pointPixelScale: 1)
+        self.outputPlan = initialPlan
+        self.outputURL = initialPlan.transcode == nil ? finalURL
+            : FileManager.default.temporaryDirectory.appendingPathComponent("Snapper-\(UUID().uuidString).mp4")
         self.showOnboarding = showOnboarding
         self.onEnded = onEnded
         self.onStarted = onStarted
         self.onStopping = onStopping
     }
 
-    func start() { send(.start(url: outputURL)) }
+    func start() { send(.start(url: outputURL, converts: outputPlan.transcode != nil)) }
     func stop() { send(.stopRequested) }
     func cancel() { send(.cancelRequested) }
 
@@ -109,19 +120,71 @@ final class RecordingSession {
                 do { try FileManager.default.removeItem(at: url) }
                 catch let error as NSError where error.domain == NSCocoaErrorDomain && error.code == NSFileNoSuchFileError {}
                 catch { logger.error("Deleting recording: \(error.localizedDescription, privacy: .public)") }
-            case .showError(let failure): ErrorAlerts.showError(title: "Couldn't record the screen", error: failure)
+            case .showError(let failure): ErrorAlerts.showError(title: failure.title, error: failure)
             case .showOnboarding: showOnboarding()
+            case .releaseCapture: releaseCapture()
+            case .convert(let url): convert(url)
+            case .saveOriginal(let url):
+                releaseCapture()
+                if let saved = saveOriginal(url) { NSWorkspace.shared.activateFileViewerSelecting([saved]) }
             case .ended:
-                stopTimeoutTask?.cancel()
-                stopTimeoutTask = nil
-                if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
-                screenObserver = nil
-                // Detach the writer after finalization and before releasing SCK resources.
-                removeRecordingOutput()
-                // Keep SCK objects until finalization; release them only after a terminal event.
-                stream = nil
-                recordingOutput = nil
+                releaseCapture()
                 onEnded()
+            }
+        }
+    }
+
+    private func releaseCapture() {
+        stopTimeoutTask?.cancel()
+        stopTimeoutTask = nil
+        if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
+        screenObserver = nil
+        removeRecordingOutput()
+        stream = nil
+        recordingOutput = nil
+    }
+
+    private func saveOriginal(_ capture: URL) -> URL? {
+        do {
+            let destination = try SaveFolder(url: finalURL.deletingLastPathComponent())
+                .uniqueFileURL(for: .recording(.mp4), date: startDate)
+            try FileManager.default.moveItem(at: capture, to: destination)
+            return destination
+        } catch {
+            logger.error("Saving original recording: \(error.localizedDescription, privacy: .public)")
+            // The folder may have vanished; don't leave a temporary capture behind.
+            try? FileManager.default.removeItem(at: capture)
+            return nil
+        }
+    }
+
+    private func convert(_ capture: URL) {
+        guard let transcode = outputPlan.transcode else { return }
+        let converted = capture.deletingPathExtension().appendingPathExtension("out.mp4")
+        Task {
+            do {
+                try await Task.detached(priority: .userInitiated) {
+                    switch transcode {
+                    case .mp4(let bitrate):
+                        try await MP4Transcoder.transcode(input: capture, output: converted, averageBitRate: bitrate)
+                    }
+                }.value
+                let folder = SaveFolder(url: finalURL.deletingLastPathComponent())
+                // Resolve again immediately before moving; moveItem never overwrites a collision.
+                var destination = finalURL
+                while true {
+                    do {
+                        try FileManager.default.moveItem(at: converted, to: destination)
+                        break
+                    } catch let error as NSError where error.domain == NSCocoaErrorDomain && error.code == NSFileWriteFileExistsError {
+                        destination = try folder.uniqueFileURL(for: .recording(outputPlan.format), date: startDate)
+                    }
+                }
+                send(.conversionFinished(destination))
+            } catch {
+                try? FileManager.default.removeItem(at: converted)
+                let saved = saveOriginal(capture)
+                send(.conversionFailed(.compression(error.localizedDescription), savedOriginal: saved))
             }
         }
     }
@@ -151,6 +214,7 @@ final class RecordingSession {
                 authorization: MicrophonePermission.authorization,
                 hasAudioInputDevice: MicrophonePermission.hasAudioInputDevice)
             let config: SCStreamConfiguration
+            let pointPixelScale: CGFloat
             switch source {
             case .rectangle(let configuration):
                 guard let display = content.displays.first(where: { $0.displayID == configuration.displayID }) else {
@@ -161,6 +225,7 @@ final class RecordingSession {
                 }
                 filter = SCContentFilter(display: display, excludingApplications: [ownApp], exceptingWindows: [])
                 config = RecordingConfigurationBuilder.buildStream(rectangle: configuration, microphone: microphone)
+                pointPixelScale = CGFloat(configuration.pixelWidth) / configuration.sourceRect.width
             case .window(let windowID):
                 guard let window = content.windows.first(where: { $0.windowID == windowID }) else {
                     throw ScreenshotCaptureError.windowUnavailable
@@ -170,7 +235,10 @@ final class RecordingSession {
                 let configuration = RecordingConfigurationBuilder.buildWindow(
                     contentSize: filter.contentRect.size, pointPixelScale: CGFloat(filter.pointPixelScale))
                 config = RecordingConfigurationBuilder.buildStream(window: configuration, microphone: microphone)
+                pointPixelScale = CGFloat(filter.pointPixelScale)
             }
+            outputPlan = exportSettings.plan(pixelWidth: config.width, pixelHeight: config.height,
+                                             pointPixelScale: pointPixelScale)
             let outputConfig = SCRecordingOutputConfiguration()
             outputConfig.outputURL = outputURL
             outputConfig.videoCodecType = .h264

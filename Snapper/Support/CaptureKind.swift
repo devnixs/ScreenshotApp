@@ -1,6 +1,6 @@
-enum CaptureKind: Sendable, Equatable, CaseIterable {
+enum CaptureKind: Sendable, Equatable {
     case screenshot
-    case recording
+    case recording(RecordingFormat)
 
     var namePrefix: String {
         switch self {
@@ -12,7 +12,7 @@ enum CaptureKind: Sendable, Equatable, CaseIterable {
     var fileExtension: String {
         switch self {
         case .screenshot: "png"
-        case .recording: "mp4"
+        case .recording(let format): format.fileExtension
         }
     }
 }

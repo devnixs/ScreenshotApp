@@ -8,7 +8,7 @@ struct RecordingStartupBufferTests {
         let failure = RecordingFailure(message: "Writer stopped", kind: .other)
         var lifecycle = RecordingLifecycle()
         var buffer = RecordingStartupBuffer<RecordingEvent>()
-        _ = lifecycle.handle(.start(url: url))
+        _ = lifecycle.handle(.start(url: url, converts: false))
         #expect(buffer.shouldDeliver(.streamStopped(failure)) == false)
         #expect(buffer.shouldDeliver(.outputFailed(failure, fileHasContent: true)) == false)
         #expect(lifecycle.phase == .starting)

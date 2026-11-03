@@ -147,3 +147,23 @@ As a Snapper user, I can choose High, Medium, or Low MP4 quality in Settings →
 - GIF format, GIF quality picker, microphone gating for GIF, and the GIF encoder — **0024-recording-gif-format**.
 - Changing capture resolution, frame rate, codec (HEVC), or progress UI for the conversion.
 - A cancel button for an in-progress conversion.
+
+## Verification status
+
+Automated verification on 2026-11-03: `xcodegen generate`, `xcodebuild -scheme Snapper -configuration Debug build`, and `xcodebuild -scheme Snapper test` all passed. The full suite passed **388 tests in 69 suites**, with zero failures. Coverage includes persisted format/quality defaults and fallback, filename extensions/collisions, bitrate/output plans, conversion lifecycle transitions and ignored events, and headless MP4 tests for 320×240 VFR timestamps, held-final-frame duration, single-frame input, invalid media, and identical encoded AAC audio bytes/timestamps after compression.
+
+Implementation uses an immutable `RecordingExportSettings` snapshot; the session makes its final output plan after ScreenCaptureKit provides the real window dimensions. `RecordingEvent.start` callers explicitly pass `converts`. GIF selection/encoding remains deferred to 0024. PRD already describes the behavior and needed no changes. AGENTS.md's testability list now includes export planning and headless MP4 compression.
+
+GUI behavior has not been verified. With Screen Recording permission granted:
+
+- [ ] not yet run by user: In Settings → Recording, confirm High is selected by default. Record ten seconds of a busy rectangle with High; Stop should reveal the file immediately. Note its dimensions and size.
+- [ ] not yet run by user: Repeat with Medium; confirm Finder reveals a smaller MP4 with the same pixel dimensions and duration in QuickTime Inspector.
+- [ ] not yet run by user: Repeat with Low; confirm it is smaller than Medium.
+- [ ] not yet run by user: Enable Record microphone, record speech with Low, and confirm audio plays in sync.
+- [ ] not yet run by user: Stop a long full-Retina-display Low recording; immediately try ⌘⇧4, ⌘⇧5, and the menu bar icon. Confirm controls disappear, triggers do nothing, and the icon stays red until Finder reveals the result.
+- [ ] not yet run by user: Stop another long Low recording and immediately quit. Confirm Snapper waits for conversion, reveals the file, then quits.
+- [ ] not yet run by user: Cancel a Medium/Low recording; confirm no new output or `Snapper-` temporary recording remains.
+- [ ] not yet run by user: Record the same window with High and Medium; confirm identical output pixel dimensions.
+- [ ] not yet run by user: Relaunch Snapper and confirm the selected MP4 quality persists.
+
+Rebuilding with a different signature can reset Screen Recording permission.

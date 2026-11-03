@@ -38,6 +38,10 @@ final class SettingsModel {
         get { settings.playShutterSound }
         set { settings.playShutterSound = newValue }
     }
+    var mp4Quality: RecordingQuality {
+        get { settings.mp4Quality }
+        set { settings.mp4Quality = newValue }
+    }
     var recordMicrophone: Bool { settings.recordMicrophone }
 
     func setLaunchAtLogin(_ value: Bool) {

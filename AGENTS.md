@@ -57,7 +57,8 @@ Run the build and the tests before reporting work as done. Report failures as th
   - file naming (timestamps, collision suffixes)
   - Settings decisions (shortcut conflicts/duplicates, microphone authorization, launch-at-login state)
   - window candidate ordering/hit-testing, display assignment, and selection mode/press state
-  - recording configuration, lifecycle/effects, startup callback ordering, deferred-termination decisions, and window polling/parser/tracking state
+  - recording configuration, export plans/bitrates, lifecycle/effects (including conversion), startup callback ordering, deferred-termination decisions, and window polling/parser/tracking state
+  - headless MP4 compression (dimensions, variable frame timing, duration, and unchanged encoded audio)
   
   Views only render the model and forward input to it.
 - Annotation shapes are stored in **image pixel coordinates**. Export renders at full image resolution, never at the window's display scale.

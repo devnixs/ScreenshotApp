@@ -6,6 +6,7 @@ final class AppSettings {
     enum Key: String, CaseIterable {
         case launchAtLogin, saveFolderPath, screenshotDestination, playShutterSound
         case recordMicrophone, onboardingDismissed, annotationColor, annotationStrokeWidth
+        case recordingFormat, mp4Quality, gifQuality
     }
 
     enum Defaults {
@@ -13,6 +14,9 @@ final class AppSettings {
         static var saveFolderURL: URL { SaveFolder.defaultURL }
         static let screenshotDestination: ScreenshotDestination = .both
         static let playShutterSound = true
+        static let recordingFormat: RecordingFormat = .mp4
+        static let mp4Quality: RecordingQuality = .high
+        static let gifQuality: RecordingQuality = .medium
         static let recordMicrophone = false
         static let onboardingDismissed = false
         static let annotationColor: RGBAColor = .red
@@ -38,6 +42,15 @@ final class AppSettings {
     }
     var playShutterSound: Bool {
         didSet { defaults.set(playShutterSound, forKey: Key.playShutterSound.rawValue) }
+    }
+    var recordingFormat: RecordingFormat {
+        didSet { defaults.set(recordingFormat.rawValue, forKey: Key.recordingFormat.rawValue) }
+    }
+    var mp4Quality: RecordingQuality {
+        didSet { defaults.set(mp4Quality.rawValue, forKey: Key.mp4Quality.rawValue) }
+    }
+    var gifQuality: RecordingQuality {
+        didSet { defaults.set(gifQuality.rawValue, forKey: Key.gifQuality.rawValue) }
     }
     var recordMicrophone: Bool {
         didSet { defaults.set(recordMicrophone, forKey: Key.recordMicrophone.rawValue) }
@@ -65,6 +78,9 @@ final class AppSettings {
         saveFolderURL = Self.decodeSaveFolder(in: defaults)
         screenshotDestination = Self.decodeEnum(.screenshotDestination, in: defaults, default: Defaults.screenshotDestination)
         playShutterSound = Self.decodeBool(.playShutterSound, in: defaults, default: Defaults.playShutterSound)
+        recordingFormat = Self.decodeEnum(.recordingFormat, in: defaults, default: Defaults.recordingFormat)
+        mp4Quality = Self.decodeEnum(.mp4Quality, in: defaults, default: Defaults.mp4Quality)
+        gifQuality = Self.decodeEnum(.gifQuality, in: defaults, default: Defaults.gifQuality)
         recordMicrophone = Self.decodeBool(.recordMicrophone, in: defaults, default: Defaults.recordMicrophone)
         onboardingDismissed = Self.decodeBool(.onboardingDismissed, in: defaults, default: Defaults.onboardingDismissed)
         annotationColor = Self.decodeColor(in: defaults)
