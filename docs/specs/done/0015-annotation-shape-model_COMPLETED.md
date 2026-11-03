@@ -5,8 +5,8 @@
 
 ## Context
 
-Not yet implemented. No app code exists; `Snapper/Annotate/Model/` will contain only
-`RGBAColor.swift` and `StrokeWidth.swift` once 0003 is done.
+Implemented as pure value types in `Snapper/Annotate/Model/`, building on
+`RGBAColor.swift` and `StrokeWidth.swift` from 0003.
 
 The annotation editor (0017–0020) needs a shape model that it can render, hit-test, move and
 resize without any AppKit dependency. AGENTS.md requires that the annotation model is pure Swift
@@ -190,24 +190,24 @@ drawing calls.** All files live in `Snapper/Annotate/Model/`. All types are `Equ
 - Add the files above under `Snapper/Annotate/Model/` and `SnapperTests/AnnotationShapeTests.swift`,
   then run `xcodegen generate`. No `project.yml` changes beyond what directory-based sources pick up
   (if 0001 lists sources explicitly, add them there).
-- No PRD change in this spec (the decisions below that touch product behavior are listed as open
-  questions for the orchestrator to confirm and record in `docs/PRD.md §8.2`).
+- The approved product decisions are already recorded in `docs/PRD.md §8.2`; no further PRD
+  or AGENTS.md changes were needed during implementation.
 
 ## Acceptance criteria
 
-- [ ] `Snapper/Annotate/Model/` contains `AnnotationShape`, `ShapeHandle`, `TextBox`,
+- [x] `Snapper/Annotate/Model/` contains `AnnotationShape`, `ShapeHandle`, `TextBox`,
       `ArrowGeometry`, `ShapeGeometry`, none of which import AppKit, SwiftUI or CoreText.
-- [ ] All geometry is stored in image pixels (top-left origin, y down); stroke and text sizes are
+- [x] All geometry is stored in image pixels (top-left origin, y down); stroke and text sizes are
       derived from `StrokeWidth` × `pixelsPerPoint`, so S/M/L = 2/4/8 image points and text 16/24/36
       image points hold at both 1× and 2×.
-- [ ] Rectangle: Shift-constrained creation and resize yield a square in all four quadrants.
-- [ ] Arrow: Shift-constrained creation and endpoint drag snap to the nearest multiple of 45°,
+- [x] Rectangle: Shift-constrained creation and resize yield a square in all four quadrants.
+- [x] Arrow: Shift-constrained creation and endpoint drag snap to the nearest multiple of 45°,
       preserving the drag length.
-- [ ] The arrowhead's size scales with the stroke width using the formula above.
-- [ ] Rectangles expose 4 corner handles, arrows 2 endpoint handles, text none.
-- [ ] Resizing a rectangle past its opposite corner flips correctly and returns the new handle identity.
-- [ ] Every operation preserves the shape's `id`, `color` and `strokeWidth`.
-- [ ] `xcodebuild -scheme Snapper -configuration Debug build` and `xcodebuild -scheme Snapper test` pass.
+- [x] The arrowhead's size scales with the stroke width using the formula above.
+- [x] Rectangles expose 4 corner handles, arrows 2 endpoint handles, text none.
+- [x] Resizing a rectangle past its opposite corner flips correctly and returns the new handle identity.
+- [x] Every operation preserves the shape's `id`, `color` and `strokeWidth`.
+- [x] `xcodebuild -scheme Snapper -configuration Debug build` and `xcodebuild -scheme Snapper test` pass.
 
 ## Edge cases
 
@@ -310,3 +310,14 @@ None. User confirmed on 2026-11-03: Reject rectangle drags when either dimension
   rule — **0019-annotation-text-tool**.
 - Flattened full-resolution export — **0020-annotation-export**.
 - Any other shape types (blur, highlighter, crop, numbered steps) — PRD §2 non-goals.
+
+## Verification status
+
+- Verified on **2026-11-03**: `xcodegen generate` succeeded.
+- `xcodebuild -scheme Snapper -configuration Debug build`: **BUILD SUCCEEDED**.
+- `xcodebuild -scheme Snapper test`: **TEST SUCCEEDED** — **275 tests in 44 suites passed**,
+  including **18 new AnnotationShapeTests** covering the geometry, scale conversion, handles,
+  resize flips, degenerate shapes, creation thresholds, text measurement seam and stable identity.
+- Manual verification: **N/A for this pure model slice**. No UI, capture, permissions or hotkey
+  behavior was added, and no GUI path was manually verified. Drawing, Shift constraints, visible
+  hit areas and mouse handles remain manual checks for 0017 and 0018 when wired to the canvas.
