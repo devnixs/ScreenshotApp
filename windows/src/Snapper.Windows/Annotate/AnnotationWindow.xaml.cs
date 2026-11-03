@@ -129,10 +129,19 @@ internal sealed partial class AnnotationWindow : Window
         try { if (ColorDialogPresenter.Pick(this, styleState.DisplayedStyle.Color) is { } color) Pick(new ToolbarStyleEvent.ColorPicked(color)); }
         finally { hasOpenDialog = false; FocusCanvas(); }
     }
-    private void KeyDownPreview(object sender, KeyEventArgs e)
+    private async void KeyDownPreview(object sender, KeyEventArgs e)
     {
         var key = e.Key == Key.System ? e.SystemKey : e.Key;
         var modifiers = Keyboard.Modifiers;
+        if (isCopyAndClosing) { e.Handled = true; return; }
+        if (CopyAndCloseDecision.IsShortcut(KeyInterop.VirtualKeyFromKey(key),
+            modifiers.HasFlag(ModifierKeys.Control), modifiers.HasFlag(ModifierKeys.Shift),
+            modifiers.HasFlag(ModifierKeys.Alt), modifiers.HasFlag(ModifierKeys.Windows), e.IsRepeat))
+        {
+            e.Handled = true;
+            await CopyAndCloseAsync();
+            return;
+        }
         if (TextEditing.IsEditing)
         {
             var textKey = key switch { Key.Escape => TextEditingKey.Escape, Key.Enter => TextEditingKey.Enter,
@@ -143,10 +152,9 @@ internal sealed partial class AnnotationWindow : Window
             else if (route == TextEditingKeyRoute.Ignore) e.Handled = true;
             else if (route == TextEditingKeyRoute.Window)
             {
-                // Export commands bubble after the editor; Alt+F4 uses the normal system close.
-                if (key is Key.S or Key.W or Key.F4) return;
-                // 0044 adds Copy & Close for Ctrl+Enter; consume it without inserting a newline.
-                e.Handled = true;
+                // Exact Ctrl+Enter was handled above. Other editor keys retain native behavior;
+                // export commands bubble after the editor, and Alt+F4 uses the normal system close.
+                return;
             }
             return; // Editor keys never fall through to document undo, even with an empty native undo stack.
         }

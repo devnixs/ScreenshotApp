@@ -1,7 +1,8 @@
 using Snapper.Core.Annotate.Model;
 namespace Snapper.Core.Annotate;
 public sealed record AnnotationToolDescriptor(AnnotationTool Tool, string Label, string ToolTip, string Glyph, double GlyphRotation = 0);
-public sealed record AnnotationActionDescriptor(string Label, string ToolTip, string Glyph);
+public enum AnnotationToolbarAction { Save, Copy, CopyAndClose }
+public sealed record AnnotationActionDescriptor(AnnotationToolbarAction Action, string Label, string ToolTip, string Glyph);
 public static class AnnotationToolbarLayout
 {
     // Verified against Microsoft's Segoe Fluent Icons reference: TouchPointer, Checkbox, Forward, Font, Add.
@@ -12,5 +13,9 @@ public static class AnnotationToolbarLayout
     public const string CustomColorToolTip = "Custom color…", CustomColorGlyph = "\uE710";
     public static IReadOnlyList<string> StrokeLabels { get; } = Array.AsReadOnly(new[] { "S", "M", "L" });
     public static IReadOnlyList<string> StrokeToolTips { get; } = Array.AsReadOnly(new[] { "Small", "Medium", "Large" });
-    public static IReadOnlyList<AnnotationActionDescriptor> TrailingActions { get; } = Array.Empty<AnnotationActionDescriptor>();
+    public const string CopyAndCloseLabel = "Copy & Close", CopyAndCloseToolTip = "Copy & Close (Ctrl+Enter)", CopyAndCloseGlyph = "\uE73E";
+    public static IReadOnlyList<AnnotationActionDescriptor> TrailingActions { get; } = Array.AsReadOnly<AnnotationActionDescriptor>([
+        new(AnnotationToolbarAction.Save, "Save", "Save (Ctrl+S)", "\uE74E"),
+        new(AnnotationToolbarAction.Copy, "Copy", "Copy (Ctrl+C)", "\uE8C8"),
+        new(AnnotationToolbarAction.CopyAndClose, CopyAndCloseLabel, CopyAndCloseToolTip, CopyAndCloseGlyph)]);
 }

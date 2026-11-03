@@ -22,7 +22,7 @@ namespace Snapper.Windows.Annotate;
 
 internal sealed partial class AnnotationWindow
 {
-    private bool closeConfirmed, sessionEnding, isPrompting, isExporting, isClosed, blockReasonRegistered;
+    private bool closeConfirmed, sessionEnding, isPrompting, isExporting, isCopyAndClosing, isClosed, blockReasonRegistered;
     private HwndSource? sessionSource;
     private Forms.TaskDialogPage? discardPrompt;
     private readonly TaskCompletionSource closed = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -31,8 +31,17 @@ internal sealed partial class AnnotationWindow
 
     private void BuildExportToolbar()
     {
-        AddExportButton("Save", "\uE74E", "Save (Ctrl+S)", async () => await SaveAsync());
-        AddExportButton("Copy", "\uE8C8", "Copy (Ctrl+C)", async () => await TryCopyFlattenedImageAsync());
+        foreach (var descriptor in AnnotationToolbarLayout.TrailingActions)
+        {
+            Action action = descriptor.Action switch
+            {
+                AnnotationToolbarAction.Save => async () => await SaveAsync(),
+                AnnotationToolbarAction.Copy => async () => await TryCopyFlattenedImageAsync(),
+                AnnotationToolbarAction.CopyAndClose => async () => await CopyAndCloseAsync(),
+                _ => throw new ArgumentOutOfRangeException(nameof(descriptor))
+            };
+            AddExportButton(descriptor.Label, descriptor.Glyph, descriptor.ToolTip, action);
+        }
     }
     private void AddExportButton(string label, string glyph, string tooltip, Action action)
     {
@@ -62,6 +71,39 @@ internal sealed partial class AnnotationWindow
         }
     }
     private static void Beep() => System.Media.SystemSounds.Beep.Play();
+
+    private async Task CopyAndCloseAsync()
+    {
+        if (CopyAndCloseDecision.Start(Canvas.IsDragging, HasOpenDialog || isCopyAndClosing) == CopyAndCloseStart.Refuse)
+        { Beep(); return; }
+        TextEditing.Commit();
+        var canvasEnabled = CanvasHost.IsEnabled;
+        var toolbarEnabled = ToolbarRow.IsEnabled;
+        isCopyAndClosing = true;
+        CanvasHost.IsEnabled = false;
+        ToolbarRow.IsEnabled = false;
+        try
+        {
+            // Unlike plain Copy, this action must not accept a new edit while encoding yields.
+            var copied = await TryCopyFlattenedImageAsync();
+            var canClose = copied && !Document.IsDirty && !TextEditing.IsEditing && !Canvas.IsDragging;
+            if (!isClosed && CopyAndCloseDecision.Finish(canClose) == CopyAndCloseFinish.Close)
+            {
+                isCopyAndClosing = false;
+                Close(); // The normal close policy sees the copied, clean document; no bypass flag.
+            }
+        }
+        finally
+        {
+            isCopyAndClosing = false;
+            if (!isClosed)
+            {
+                CanvasHost.IsEnabled = canvasEnabled;
+                ToolbarRow.IsEnabled = toolbarEnabled;
+                FocusCanvas();
+            }
+        }
+    }
 
     public async Task SaveAsync()
     {
@@ -141,6 +183,7 @@ internal sealed partial class AnnotationWindow
     private void ConfirmWindowClosing(CancelEventArgs args)
     {
         if (closeConfirmed || sessionEnding) return;
+        if (isCopyAndClosing) { args.Cancel = true; Beep(); return; }
         if (isPrompting) { args.Cancel = true; Beep(); return; }
         TextEditing.Commit();
         if (UnsavedAnnotationsPolicy.CloseDecisionFor(Document.IsDirty) == CloseDecision.CloseImmediately) return;

@@ -244,3 +244,28 @@ is gone, in one step and with no prompt.
 - Copying a file reference instead of image data. Copy & Close puts the same PNG + DIB on the
   clipboard as Copy (0031 `Support/Clipboard`).
 - Packaging and the full §13.11 acceptance pass (0047).
+
+## Verification status
+
+Automated verification on 2026-11-03: `dotnet build windows/Snapper.slnx -c Debug` passed with **0 warnings and 0 errors**. `dotnet test windows/Snapper.slnx` passed **1,251 tests**, with **0 failures and 0 skips** (17 new cases). The added tests cover every start/finish decision, exact modifiers, repeat/IME exclusion, Return virtual-key identity, and the toolbar order/descriptors. `git diff --check` also passed.
+
+Implementation adaptations to the landed dependencies:
+
+- Extended the existing `AnnotationToolbarLayout` and `AnnotationActionDescriptor` rather than adding a second toolbar description. Its descriptors now drive all three rendered trailing buttons.
+- Reused 0043's `TryCopyFlattenedImageAsync()` rather than introducing a synchronous copy helper. Copy & Close commits text, temporarily disables this window's canvas/toolbar input and consumes keyboard input while encoding, then uses the normal close policy only after successful copying leaves the document clean. A defensive final-state check prevents closing over a newer edit. Failure restores input and focus. This action adds no discard-confirmation bypass, and plain Copy/Save retain their existing async behavior.
+- The window's preview handler matches Ctrl+Enter before the text editor sees it. Other Enter modifier combinations retain native editor behavior; IME-processed keys and repeat presses do not match.
+- PRD and AGENTS.md already describe the required behavior and architecture; neither needed changes.
+
+GUI behavior has not been verified. Run these on Windows 11:
+
+- [ ] not yet run by user: Open an annotation and confirm Save, Copy, then the checkmark button at the toolbar's right end; its tooltip is "Copy & Close (Ctrl+Enter)" and accessible name is "Copy & Close".
+- [ ] not yet run by user: Draw a rectangle and arrow, click Copy & Close, and confirm the window closes without a prompt. Paste into Paint and check both shapes and native pixel dimensions, including on a 150% monitor.
+- [ ] not yet run by user: Repeat with Ctrl+Enter and then numpad Ctrl+Enter; confirm both copy and close without prompting.
+- [ ] not yet run by user: Edit a text box with "Hello", plain Enter, and "World"; press Ctrl+Enter without leaving it and confirm the copied image contains both lines.
+- [ ] not yet run by user: During a shape drag, press Ctrl+Enter; confirm it beeps, the window stays open, and the drag continues.
+- [ ] not yet run by user: Modify two editors, hold Ctrl+Enter in one, and confirm only that editor closes. Exit Snapper and confirm the unsaved count is one.
+- [ ] not yet run by user: Hold the clipboard open from another process and try Copy & Close. Confirm the copy-error alert, open dirty window, restored input, and discard prompt on subsequent Ctrl+W. Mark this unrun if clipboard locking cannot be reproduced.
+- [ ] not yet run by user: Copy & Close the only modified annotation, then sign out; confirm Snapper no longer blocks shutdown for "Unsaved annotations".
+- [ ] not yet run by user: Regress Ctrl+C image copy, text-selection copy, and Ctrl+S save. Confirm Ctrl+Shift+Enter does not close the editor, plain Enter adds a line, and IME composition Enter does not trigger copying.
+- [ ] not yet run by user: With this editor's Save, Color, or Discard dialog open, confirm Copy & Close cannot close the owner underneath it; dismiss the dialog and confirm the editor remains usable.
+- [ ] not yet run by user: Copy & Close a large capture and immediately attempt drawing, toolbar changes, Undo, and another close while encoding. Confirm input is guarded, the copied snapshot is complete, and no newer edit is lost. On a reproducible copy failure, confirm canvas/toolbar input and focus are restored.

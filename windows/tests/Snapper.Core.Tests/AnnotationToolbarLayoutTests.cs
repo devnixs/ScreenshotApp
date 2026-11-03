@@ -15,10 +15,21 @@ public sealed class AnnotationToolbarLayoutTests
         Assert.Equal(-45, AnnotationToolbarLayout.Tools.Single(t => t.Tool == AnnotationTool.Arrow).GlyphRotation);
         Assert.Equal("\uE710", AnnotationToolbarLayout.CustomColorGlyph); Assert.Equal("Custom color…", AnnotationToolbarLayout.CustomColorToolTip);
     }
-    [Fact] public void SwatchesWidthsAndActionsMatchThisSlice()
+    [Fact] public void SwatchesAndWidthsMatchProduct()
     {
         Assert.Equal(new[] { "Red", "Orange", "Yellow", "Green", "Blue", "Purple", "Black", "White" }, AnnotationToolbarLayout.SwatchToolTips);
         Assert.Equal(new[] { "S", "M", "L" }, AnnotationToolbarLayout.StrokeLabels); Assert.Equal(new[] { "Small", "Medium", "Large" }, AnnotationToolbarLayout.StrokeToolTips);
-        Assert.Empty(AnnotationToolbarLayout.TrailingActions);
+    }
+    [Fact] public void TrailingActionsUseProductOrderAndDescriptors()
+    {
+        Assert.Equal(new[] { AnnotationToolbarAction.Save, AnnotationToolbarAction.Copy, AnnotationToolbarAction.CopyAndClose },
+            AnnotationToolbarLayout.TrailingActions.Select(a => a.Action));
+        Assert.Equal(AnnotationToolbarAction.CopyAndClose, AnnotationToolbarLayout.TrailingActions[^1].Action);
+        Assert.Equal(new[] { "Save", "Copy", "Copy & Close" }, AnnotationToolbarLayout.TrailingActions.Select(a => a.Label));
+        Assert.Equal(new[] { "Save (Ctrl+S)", "Copy (Ctrl+C)", "Copy & Close (Ctrl+Enter)" }, AnnotationToolbarLayout.TrailingActions.Select(a => a.ToolTip));
+        Assert.Equal(new[] { "\uE74E", "\uE8C8", "\uE73E" }, AnnotationToolbarLayout.TrailingActions.Select(a => a.Glyph));
+        Assert.Equal("Copy & Close", AnnotationToolbarLayout.CopyAndCloseLabel);
+        Assert.Equal("Copy & Close (Ctrl+Enter)", AnnotationToolbarLayout.CopyAndCloseToolTip);
+        Assert.Equal("\uE73E", AnnotationToolbarLayout.CopyAndCloseGlyph);
     }
 }
