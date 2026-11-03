@@ -2,6 +2,7 @@ using Microsoft.Win32;
 using System.Windows.Threading;
 using Snapper.Core.App;
 using Snapper.Core.Settings;
+using Snapper.Core.Support;
 using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.Graphics.Gdi;
@@ -23,6 +24,7 @@ internal sealed class TrayIconController : IDisposable
     private TrayIconState state = TrayIconState.Idle;
     private long? menuClosedAt;
     private bool disposed;
+    private Action? balloonClick;
 
     public TrayIconController(AppCoordinator coordinator)
     {
@@ -38,8 +40,16 @@ internal sealed class TrayIconController : IDisposable
         menu.Closed += (_, _) => menuClosedAt = Environment.TickCount64;
         notifyIcon.MouseUp += (_, e) =>
         {
-            if (e.Button is Forms.MouseButtons.Left or Forms.MouseButtons.Right) this.coordinator.TrayClicked();
+            if (e.Button is Forms.MouseButtons.Left or Forms.MouseButtons.Right)
+                this.coordinator.Send(new AppModeEvent.TrayClicked(e.Button == Forms.MouseButtons.Left ? TrayButton.Left : TrayButton.Right));
         };
+        notifyIcon.BalloonTipClicked += (_, _) =>
+        {
+            var action = balloonClick;
+            balloonClick = null;
+            action?.Invoke();
+        };
+        notifyIcon.BalloonTipClosed += (_, _) => balloonClick = null;
         Refresh();
         notifyIcon.Visible = true;
         SystemEvents.UserPreferenceChanged += UserPreferenceChanged;
@@ -54,6 +64,27 @@ internal sealed class TrayIconController : IDisposable
         if (!TrayMenuClickGate.ShouldOpenMenu(menu.Visible, sinceClosed, Forms.SystemInformation.DoubleClickTime)) return;
         PInvoke.SetForegroundWindow(new HWND(menu.Handle));
         menu.Show(Forms.Cursor.Position, Forms.ToolStripDropDownDirection.AboveLeft);
+    }
+
+    public void CloseMenu()
+    {
+        if (menu.Visible) menu.Close();
+    }
+
+    public void UpdateShortcutTexts(IReadOnlyDictionary<CapturePurpose, KeyChord?> bindings)
+    {
+        foreach (var (purpose, entry) in new[]
+        {
+            (CapturePurpose.Screenshot, TrayMenuEntry.Screenshot),
+            (CapturePurpose.Record, TrayMenuEntry.Record),
+            (CapturePurpose.Annotate, TrayMenuEntry.Annotate)
+        }) items[entry].ShortcutKeyDisplayString = bindings[purpose]?.DisplayString ?? string.Empty;
+    }
+
+    public void ShowWarningBalloon(string title, string body, Action onClick)
+    {
+        balloonClick = onClick;
+        notifyIcon.ShowBalloonTip(10_000, title, body, Forms.ToolTipIcon.Warning);
     }
 
     public void SetState(TrayIconState state)
@@ -117,6 +148,7 @@ internal sealed class TrayIconController : IDisposable
     {
         if (disposed) return;
         disposed = true;
+        balloonClick = null;
         SystemEvents.UserPreferenceChanged -= UserPreferenceChanged;
         SystemEvents.DisplaySettingsChanged -= DisplaySettingsChanged;
         notifyIcon.Visible = false;

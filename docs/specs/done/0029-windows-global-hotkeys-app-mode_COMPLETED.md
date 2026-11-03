@@ -477,3 +477,24 @@ tells me so and takes me to Settings, and my other shortcuts keep working.
   must temporarily unregister Snapper's hotkeys (or the recorder never sees a currently bound
   chord). Add a `Suspend()`/`Resume()` pair to `HotkeyManager` there.
 - The onboarding window and permission gate: not applicable on Windows (PRD §13.10).
+
+## Verification status
+
+Automated verification on 2026-11-03: `dotnet build windows/Snapper.slnx -c Debug` passed with **0 warnings and 0 errors**. `dotnet test windows/Snapper.slnx` passed **398 tests**, including 96 new cases, with no failures or skips. The tests cover the literal 55-cell transition table, repeated stop/conversion contracts, registration changes/swaps/duplicates/unbound states, silent retries, native modifier mapping, exact failure messages, and settings bindings. Core's platform-dependency smoke test remains green. PRD and AGENTS.md already describe the implementation; neither needed edits.
+
+Implementation note: the message-only HwndSource uses the documented WinUser.h `HWND_MESSAGE` pseudo-handle value `-3`; CsWin32 does not expose it on `PInvoke`. Registration, unregistration, constants and modifier enums are generated from `NativeMethods.txt`.
+
+GUI behavior has not been verified. Run these checks on Windows 11 with DebugView capturing Win32 output or Visual Studio's Debug Output:
+
+- [ ] not yet run by user: Launch Snapper; confirm Ctrl+Shift+4/5/6 log Registered, with no failure balloon.
+- [ ] not yet run by user: Open the tray menu with each mouse button; confirm matching TrayClicked/OpenMenu logs, current shortcuts right-aligned, and dismissal by Esc or clicking elsewhere.
+- [ ] not yet run by user: In Notepad, press Ctrl+Shift+4, 5, and 6; confirm each logs Shortcut, Selecting, the overlay stub, then SelectionCancelled/Idle, without entering text.
+- [ ] not yet run by user: Hold Ctrl+Shift+4 for two seconds; confirm a single shortcut event because MOD_NOREPEAT is set.
+- [ ] not yet run by user: Press Ctrl+Shift+5 while the tray menu is open; confirm it closes before the overlay-stub log.
+- [ ] not yet run by user: Choose Screenshot, Record, and Annotate from the tray menu; confirm matching MenuItem events and the same routing.
+- [ ] not yet run by user: Start a helper holding Ctrl+Shift+4, then launch Snapper; confirm the exact Shortcut unavailable balloon, the other bindings still work, Screenshot remains usable from the menu, and clicking the balloon opens Settings with a logged Shortcuts tab request.
+- [ ] not yet run by user: Exit, release the helper, edit Screenshot to Ctrl+Shift+7 in settings.json, and relaunch; confirm the new displayed shortcut works and Ctrl+Shift+4 no longer triggers Snapper. Live rebinding through Settings is deferred to 0033.
+- [ ] not yet run by user: Exit Snapper; confirm its shortcuts are released and the helper can register Ctrl+Shift+4 again.
+- [ ] not yet run by user: Restore settings.json, deleting it if defaults are wanted.
+
+Real overlay/recording/conversion guards remain pending the Windows GUI checks in 0030, 0034, and 0045; this spec verifies their routing policy through unit tests only.
