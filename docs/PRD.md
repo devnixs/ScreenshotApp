@@ -19,6 +19,8 @@ Snapper is a macOS menu bar utility with three global shortcuts:
 
 All three shortcuts can be changed in Settings.
 
+Snapper ships as two native apps with the same features: the macOS app (Swift) and the Windows app (C#/.NET, section 13). Sections 1–12 describe the shared behavior in macOS terms. Section 13 maps those terms to Windows and lists every Windows difference. Where section 13 is silent, sections 1–12 apply to Windows unchanged.
+
 ## 2. Goals and non-goals
 
 **Goals**
@@ -29,12 +31,13 @@ All three shortcuts can be changed in Settings.
 **Non-goals (v1)**
 - Mac App Store distribution and sandboxing.
 - Floating thumbnail previews after capture.
-- GIF export, audio from system output, highlighted clicks.
+- Audio from system output, highlighted clicks.
 - Annotation tools beyond rectangle, arrow, and text (no blur, highlighter, crop, or numbered steps).
 - Selections that span more than one display.
 - JPEG output and window drop shadows.
+- Windows: Microsoft Store/MSIX packaging, an installer, code signing, auto-update, and Windows 10 support.
 
-## 3. Platform and technical constraints
+## 3. Platform and technical constraints (macOS)
 
 - **Minimum OS:** macOS 15 (Sequoia). Developed on macOS 26 with Xcode 26 and Swift 6.
 - **Language/UI:** Swift 6. AppKit for the menu bar item, selection overlays, recording overlay, and annotation canvas. SwiftUI for the Settings and onboarding windows.
@@ -73,6 +76,7 @@ All three shortcuts can be changed in Settings.
   - Our own windows and system UI that can't be captured are excluded from window hit-testing.
 - **Esc** cancels at any time and closes the overlay without doing anything.
 - After a selection, the overlay is removed before capture so it never appears in the output.
+- When the overlay closes, focus returns to the app that was active before the shortcut, except after a ⌘⇧6 selection: Snapper then keeps focus so the annotation window can open in front (section 8.1). Esc and display-change cancellations always return focus.
 - While the overlay is open, all Snapper shortcuts are ignored.
 - If a display is connected or disconnected, or its arrangement, resolution, or scale changes while the overlay is open, the selection is cancelled.
 
@@ -90,8 +94,8 @@ All three shortcuts can be changed in Settings.
 
 1. The user selects a rectangle or a window (section 5). Recording **starts immediately**, with no countdown.
    - **Window mode** records only that window. The capture follows the window as it moves, and anything covering it is excluded.
-2. **Output format:** `.mp4`, H.264, native resolution, 30 fps, cursor visible. Source bounds snap to the display pixel grid; each output dimension rounds down to an even pixel count for H.264, without rescaling rectangle captures. Window recordings use the starting content size × its ScreenCaptureKit pixel scale, rounded to whole pixels and then down to even dimensions (minimum 2 × 2). Their output dimensions remain fixed; resizing the window or moving it to a display with a different scale fits the content into that frame while preserving its aspect ratio, with letterboxing as needed.
-   - Audio: the microphone is recorded only if the *Record microphone* setting is on (off by default). System audio is never recorded. If microphone permission is missing or no input device exists at recording start, record video only without prompting or showing an alert.
+2. **Output format:** `.mp4` (default) or `.gif`, per the *Format* setting (section 7, item 6). Capture is always H.264, native resolution, 30 fps, cursor visible. Source bounds snap to the display pixel grid; each output dimension rounds down to an even pixel count for H.264, without rescaling rectangle captures. Window recordings use the starting content size × its ScreenCaptureKit pixel scale, rounded to whole pixels and then down to even dimensions (minimum 2 × 2). Their output dimensions remain fixed; resizing the window or moving it to a display with a different scale fits the content into that frame while preserving its aspect ratio, with letterboxing as needed.
+   - Audio: the microphone is recorded only if the *Record microphone* setting is on (off by default) and the format is MP4. GIF recordings never capture the microphone. System audio is never recorded. If microphone permission is missing or no input device exists at recording start, record video only without prompting or showing an alert.
 3. **Recording overlay** (excluded from the recording):
    - A floating pill below the recorded area, or above it if there is no room below. If there is no room above either (for example, a full-screen selection), it is placed inside the area, near its bottom edge. It shows `elapsed time · Stop · Cancel` and stays on the recorded area's display.
    - A thin dashed border marks the recorded area.
@@ -105,6 +109,11 @@ All three shortcuts can be changed in Settings.
    - If the recorded window closes, or in rectangle mode the recorded display is disconnected, the recording stops and is saved as if Stop had been pressed. In window mode, continue following the window when macOS moves it to a remaining display after disconnection.
    - Quitting while recording stops and saves the recording before the app exits.
 5. After saving, Finder opens the save folder with the new file **selected** (`NSWorkspace.activateFileViewerSelecting`). Recordings are not copied to the clipboard.
+6. **Format and quality** (set in Settings → Recording, read once when a recording starts):
+   - **MP4 quality** — *High* (default), *Medium*, or *Low*. *High* is the capture file as recorded, with no re-encode. *Medium* and *Low* re-encode the video after Stop as H.264 at the same pixel size and timing, with an average bitrate of width × height × 30 × 0.10 (*Medium*) or × 0.05 (*Low*) bits per second. Microphone audio is passed through unchanged.
+   - **GIF quality** — *High*: 15 fps at native pixels (2× on Retina). *Medium* (default): 10 fps at 1× (pixel size ÷ the capture's backing scale). *Low*: 8 fps at 1×, then scaled down so the longest side is at most 640 px. Sizes keep the aspect ratio, round to whole pixels (minimum 1 × 1), and never upscale. The GIF loops forever, with frame delays taken from the real frame timing.
+   - When a re-encode or GIF conversion is needed, Snapper records to a temporary MP4 and converts it after Stop. While it converts, the pill and border are already gone, the menu bar icon stays in its recording state, clicking it or pressing ⌘⇧5 does nothing, ⌘⇧4 and ⌘⇧6 stay ignored, and quitting waits for the conversion to finish. Cancel deletes the temporary file without converting.
+   - If the conversion fails, the original recording is saved to the save folder as `Recording … .mp4` and revealed, and an alert shows the error: **"Couldn't create the GIF"** or **"Couldn't compress the recording"**. A partial recording kept after a write failure (item 3) is saved the same way, as an MP4, without converting.
 
 ## 8. Feature: Annotate (⌘⇧6)
 
@@ -115,6 +124,7 @@ All three shortcuts can be changed in Settings.
   - initially scales the image to fit about 80% of the capture display’s visible frame (falling back to the main display if needed), allowing for window chrome;
   - never upscales the image, including on resize: excess space becomes centered neutral margins;
   - can be open in several copies at once.
+  - opens in front as the key window, so keyboard shortcuts and tool keys work without clicking it first. Closing it does not change focus beyond default macOS behavior.
 - Closing a window with changes that have not been saved or copied asks **"Discard changes?"**.
 - Quitting Snapper while one or more annotation windows have unsaved changes asks once: **"Quit and discard N unsaved annotations?"**.
 
@@ -129,6 +139,7 @@ All three shortcuts can be changed in Settings.
 | Stroke width | — | S / M / L = 2 / 4 / 8 image points. The arrowhead scales with the stroke width |
 | Save | ⌘S | Save dialog pre-filled with the default folder and file name |
 | Copy | ⌘C | Copies the flattened image to the clipboard. The window stays open |
+| Copy & Close | ⌘↩ | Copies the flattened image to the clipboard, then closes the window without asking. If copying fails, the error is shown and the window stays open |
 | Undo / Redo | ⌘Z / ⇧⌘Z | Covers every edit, including moves, resizes, color changes, and text edits |
 | Delete | ⌫ | Deletes the selected shape |
 
@@ -144,6 +155,7 @@ All three shortcuts can be changed in Settings.
 - Changing the color or stroke width while a shape is selected applies the change to that shape.
 - Resize handles: the four corners of a rectangle and the two endpoints of an arrow.
 - ⌘C copies the image only when no text box is being edited. While editing, it copies text as usual.
+- Save, Copy, and Copy & Close sit at the right end of the toolbar, in that order. Copy & Close uses a checkmark icon. ⌘↩ also works while a text box is being edited: it commits the text first, then copies and closes. (Return alone still adds a new line.)
 
 ### 8.3 Text
 - Clicking with the Text tool places a text box and starts editing.
@@ -162,7 +174,7 @@ All three shortcuts can be changed in Settings.
 - Screenshots and recordings share the same folder.
 - File names:
   - `Screenshot 2026-11-02 at 19.18.04.png`
-  - `Recording 2026-11-02 at 19.18.04.mp4`
+  - `Recording 2026-11-02 at 19.18.04.mp4` (or `.gif`, depending on the recording format)
   
   Screenshots use the capture time, and recordings use the time the recording started.
 - On a name collision, ` (2)`, ` (3)`, and so on are added to the name.
@@ -182,7 +194,9 @@ All three shortcuts can be changed in Settings.
 - A binding already used by another Snapper shortcut is rejected.
 
 **Recording**
-- Record microphone (default **off**). Turning it on requests microphone permission. If permission is denied, the toggle switches back off and a note appears with an **Open System Settings** button.
+- Format: MP4 / GIF (default **MP4**).
+- Quality: High / Medium / Low, for the selected format. MP4 and GIF each remember their own level (defaults: MP4 **High**, GIF **Medium**). See section 7, item 6.
+- Record microphone (default **off**). Turning it on requests microphone permission. If permission is denied, the toggle switches back off and a note appears with an **Open System Settings** button. With the GIF format, the toggle is disabled (keeping its value) with the note "GIFs don't include sound."
 
 ## 11. First run and permissions
 
@@ -204,7 +218,10 @@ All three shortcuts can be changed in Settings.
 - [ ] With multiple displays, the overlay covers all of them and the capture comes from the display where the drag started.
 - [ ] ⌘⇧5 records an `.mp4` of the selection that contains neither the overlay pill nor the border.
 - [ ] Stop (button, ⌘⇧5, or menu bar icon) saves the file and reveals it in Finder. Cancel discards it.
+- [ ] With the GIF format, ⌘⇧5 saves a looping `.gif` at the chosen quality, with no overlay pill or border in it.
+- [ ] MP4 Medium and Low produce smaller files than High at the same pixel size; High is unchanged from the plain recording.
 - [ ] ⌘⇧6 opens the annotation editor, where all tools, shortcuts, undo/redo, delete, and recoloring work.
+- [ ] After a ⌘⇧6 selection, the annotation window opens focused in front of the previously active app.
 - [ ] Saved or copied annotated images keep full resolution.
 - [ ] All three shortcuts can be rebound in Settings and take effect immediately.
 - [ ] The onboarding window appears when permission is missing or the system shortcuts conflict.
@@ -212,3 +229,126 @@ All three shortcuts can be changed in Settings.
 - [ ] The default save folder is created when it is missing. An unwritable folder shows "Couldn't save to <folder>" with **Choose Folder…**.
 - [ ] Window recordings follow the window, and closing the recorded window stops and saves the recording.
 - [ ] Closing a modified annotation window asks "Discard changes?", and quitting with unsaved annotations asks once.
+- [ ] Copy & Close (toolbar button or ⌘↩) copies the full-resolution annotated image and closes the window without a prompt.
+
+## 13. Windows version
+
+The Windows app has the same features as the macOS app. This section is the complete list of differences. Everything not mentioned here behaves exactly as described in sections 1–12, with the term mapping from 13.2 applied.
+
+### 13.1 Platform and technical constraints (Windows)
+
+- **Minimum OS:** Windows 11 (build 22000 or later), x64 and Arm64.
+- **Language/UI:** C# on .NET 10 (LTS). WPF for every window: selection overlays, recording pill and border, annotation window, and Settings. The tray icon uses the WinForms `NotifyIcon` that ships with .NET. No WinUI.
+- **Capture:** `Windows.Graphics.Capture` for screenshots and recordings. Cursor capture is off for screenshots and on for recordings. The yellow capture border is turned off (`IsBorderRequired = false`); if Windows refuses, capture proceeds with the border. Don't use GDI `BitBlt`/`PrintWindow` or Desktop Duplication.
+- **Encoding:** Media Foundation for MP4 (H.264 video, AAC audio, hardware encoder when available) and for the MP4 Medium/Low re-encode. WIC for PNG and GIF.
+- **Microphone:** Media Foundation audio capture from the default input device.
+- **Hotkeys:** Win32 `RegisterHotKey`.
+- **Excluded windows:** every overlay, recording pill, and recording border window calls `SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)`, so it never appears in screenshots or recordings. All Snapper windows are excluded from window-mode hit-testing.
+- **DPI:** the app is Per-Monitor V2 DPI aware, declared in its manifest. Monitors can have different scale factors.
+- **Dependencies:** `Microsoft.Windows.CsWin32` (build-time Win32/COM interop generator) and xUnit (tests only). No others without asking.
+- **Distribution:** unpackaged. `dotnet publish` produces a self-contained, single-file `Snapper.exe` for win-x64 and win-arm64 that runs without installing .NET. No installer and no signing in v1.
+- **Tray-only app:** Snapper has no main window and no taskbar button of its own. The annotation and Settings windows are normal windows: they appear in the taskbar and Alt+Tab while open. Overlays, the pill, and the border never do.
+- **Single instance:** launching Snapper while it is already running opens the running instance's Settings window, and the new process exits.
+
+### 13.2 Term and shortcut mapping
+
+| macOS (sections 1–12) | Windows |
+|---|---|
+| ⌘⇧4 / ⌘⇧5 / ⌘⇧6 | Ctrl+Shift+4 / Ctrl+Shift+5 / Ctrl+Shift+6 |
+| ⌘S, ⌘C | Ctrl+S, Ctrl+C |
+| ⌘↩ (Copy & Close) | Ctrl+Enter |
+| ⌘W (close annotation window) | Ctrl+W; Alt+F4 also closes |
+| ⌘Z / ⇧⌘Z | Ctrl+Z / Ctrl+Y (Ctrl+Shift+Z also redoes) |
+| ⌫ (delete shape) | Delete or Backspace |
+| Menu bar item | Notification-area (tray) icon |
+| Finder reveals the file | File Explorer opens the folder with the file selected |
+| Points | Device-independent pixels (DIPs): physical pixels × 96 ÷ the monitor's DPI |
+| Retina 2× / backing scale | The monitor's scale factor (for example 150% → 1.5×) |
+| A display's visible frame | The monitor's work area (excludes the taskbar) |
+| System Settings links | `ms-settings:` URIs |
+| Bold system font | Segoe UI Bold |
+| System color picker | The Windows Color dialog (`ChooseColor`) |
+| SF Symbols | Segoe Fluent Icons glyphs |
+| Quit Snapper / "Quit and discard N unsaved annotations?" | Exit Snapper / "Exit and discard N unsaved annotations?" (button **Exit**) |
+
+Shortcuts are displayed as `Ctrl+Shift+4` everywhere (tray menu, Settings, notifications).
+
+### 13.3 Tray icon (replaces section 4)
+
+- The icon is a camera-viewfinder glyph that is white on a dark taskbar and black on a light one, following the system theme. While recording or converting, it is a red record dot. Icons are drawn in code at the tray's icon size; no image assets are needed.
+- The tooltip is "Snapper", or "Snapper — Recording" while recording or converting.
+- **Left-click or right-click** opens the menu, Windows-style: Screenshot, Record, Annotate (each showing its current shortcut, right-aligned), a separator, Settings…, and Exit Snapper.
+- **While recording**, either click stops and saves the recording, and no menu opens. While a conversion runs (section 7, item 6), clicks do nothing.
+
+### 13.4 Selection overlay and window mode
+
+- One borderless, topmost overlay window per monitor, covering the monitor's full bounds (taskbar included), excluded from capture.
+- Windows positions and global coordinates are always **physical pixels** in virtual-screen coordinates (top-left origin, y down). DIPs only exist inside a window, converted with that window's monitor DPI. There is no Y flip on Windows, so the error-prone part is converting between DIPs and pixels across monitors with different DPIs.
+- The W × H readout shows DIPs of the monitor where the drag started. The 4 × 4 click threshold is also in DIPs.
+- The selection is cancelled when a monitor is connected or disconnected, or a monitor's arrangement, resolution, or DPI changes.
+- Focus: Snapper remembers the foreground window when the shortcut fires and brings it back when the overlay closes, except after a Ctrl+Shift+6 selection (section 5).
+- **Window-mode candidates** are visible, top-level, non-minimized windows with a non-empty frame, in z-order from the top. These are excluded: cloaked windows (other virtual desktops, suspended apps; `DWMWA_CLOAKED`), Snapper's own windows, tool windows, the desktop (`Progman`/`WorkerW`), and the taskbars (`Shell_TrayWnd`/`Shell_SecondaryTrayWnd`). A window's frame is its `DWMWA_EXTENDED_FRAME_BOUNDS`, which excludes the shadow and the invisible resize borders.
+- A candidate must be at least 4 × 4 physical pixels. Transparent or click-through overlay windows from other apps are not filtered specially.
+- A window capture uses `Windows.Graphics.Capture` on that window, so a covered window is still captured whole. The capture is cropped to the extended frame bounds, so it has no shadow. Windows 11 rounded corners are kept as Windows Graphics Capture delivers them.
+
+### 13.5 Screenshot
+
+- Native pixel resolution means the monitor's physical pixels (for example 1.5× at 150% scale).
+- **Clipboard:** the image is placed as PNG (the registered `PNG` format) and as a device-independent bitmap, so it pastes into every app.
+- **Shutter sound:** a short camera-click sound synthesized in code as an in-memory WAV and played without blocking. It uses the same *Play shutter sound* setting. No audio file ships with the app.
+- **Errors:** Windows has no Screen Recording permission, so there is no onboarding fallback. If capture is unavailable or denied, the alert "Couldn't take screenshot" shows the error.
+- Alerts use the full folder path instead of a tilde-abbreviated one.
+
+### 13.6 Recording
+
+- Section 7 applies, including MP4/GIF format, quality levels, conversion, and error handling.
+- "ScreenCaptureKit pixel scale" means the window's monitor scale factor. On Windows, the extended frame bounds are already in physical pixels.
+- MP4 *High* records with an average bitrate of width × height × 30 × 0.20 bits per second (at least 1 Mbps). Media Foundation needs an explicit bitrate; *Medium* and *Low* keep the section 7 factors.
+- In rectangle mode, if the recorded monitor's resolution, DPI, or arrangement changes, the recording stops and is saved, as on disconnection.
+- Unlike macOS, only the overlays, pill, and border are excluded from capture. The Settings and annotation windows can appear in recordings and screenshots, because excluding them would also hide them from screen sharing in other apps.
+- Frames are timestamped with their capture time, at most 30 fps. If the microphone disappears mid-recording, the video continues with partial audio and no alert. While a recorded window is minimized, no new frames arrive and the video holds the last frame.
+- After saving, File Explorer opens the save folder with the new file selected.
+- **Sign-out, restart, or shutdown** while recording or converting: Snapper registers a shutdown block reason ("Saving recording…"), stops and saves the recording (or finishes the conversion), then lets the session end. If the user forces the session to end during a conversion, Snapper cancels the conversion and moves the original MP4 into the save folder as `Recording … .mp4`.
+- At launch, leftover non-empty temporary recordings in `%TEMP%\Snapper` (for example after a crash) are moved into the save folder as `Recording … .mp4`, named from the file's creation time. Empty ones are deleted.
+
+### 13.7 Annotate
+
+- Section 8 applies, with the shortcut mapping from 13.2. Tool keys (V, R, A, T) and Esc work the same.
+- The annotation window opens in front with keyboard focus. Snapper is allowed to take the foreground because its overlay was the foreground window.
+- Tab does nothing while editing a text box (no tab characters in annotation text).
+- As on macOS, Undo/Redo and Delete are keyboard-only. There are no toolbar buttons for them.
+- Toolbar buttons use Segoe Fluent Icons glyphs. Copy & Close uses the checkmark glyph.
+- The same renderer draws the canvas and the export. Export renders at 96 DPI, so one image pixel is one output pixel, regardless of the monitor's scale.
+- **Sign-out, restart, or shutdown** with unsaved annotations: Snapper does not show its own prompt. It registers a shutdown block reason ("Unsaved annotations"), so Windows' shutdown screen lists it and the user can cancel or shut down anyway.
+
+### 13.8 Files and naming
+
+- Default save folder: **`%USERPROFILE%\Pictures\Screenshots`** (the Pictures known folder + `Screenshots`), created on first use. It is the same folder Windows uses for Win+Print Screen. Snapper's file names never collide with Windows' own names, and the collision rule in section 9 still applies.
+- File names are identical to macOS (`Screenshot 2026-11-02 at 19.18.04.png`); they contain no characters that are invalid on Windows.
+
+### 13.9 Settings (replaces "SwiftUI" in section 10)
+
+- A WPF window with the same three tabs (General, Shortcuts, Recording) and the same controls and defaults, except the save-folder default from 13.8.
+- **Storage:** one typed settings type, saved as JSON at `%APPDATA%\Snapper\settings.json`, shortcuts included. A missing or unreadable file means defaults. Unknown or invalid values fall back to their defaults individually. If the file can't be written, the new value still applies for this session and the failure is only logged (no alert in v1). The save folder is stored only after the user picks one, so the default keeps following the Pictures known folder.
+- **Launch at login:** the value `Snapper` (the quoted path of the running exe) under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`. The toggle is on only when the value exists and points to the running exe. Turning it on rewrites the value and removes any "disabled" entry Windows keeps for Snapper under `StartupApproved\Run`; turning it off deletes the value. If Snapper is turned off in Task Manager's Startup apps, the box stays checked and a note says "Snapper is turned off in Startup apps." with an **Open Startup Apps** button (`ms-settings:startupapps`).
+- **Shortcuts:** a binding needs Ctrl or Alt (Shift is allowed in addition) plus one non-modifier key. Combinations with the Windows key are not accepted, because Windows reserves them. These are also rejected, with "This shortcut is reserved.": any F12 combination, Alt+F4, Alt+Tab, Alt+Esc, Alt+Space, Ctrl+Esc, and the common editing shortcuts Ctrl+A/C/V/X/Z/Y/S/W, Ctrl+Shift+Z, and Ctrl+Enter. A binding can be cleared with Backspace/Delete while recording or with the × button. A cleared shortcut does nothing and the tray menu shows no shortcut for it. A binding already used by another Snapper shortcut is rejected (section 10). The macOS conflict warning becomes: **"Another app is using this shortcut."**, shown when `RegisterHotKey` fails for that binding. There is no System Settings button.
+- **Microphone:** turning on *Record microphone* checks the Windows microphone privacy setting. Only an explicit denial counts as denied. Windows often reports "not determined" for unpackaged apps; in that case the toggle stays on and recording tries the device. If access is denied, the toggle switches back off and a note appears with an **Open Privacy Settings** button (`ms-settings:privacy-microphone`). The GIF rule from section 10 applies unchanged.
+
+### 13.10 First run (replaces section 11)
+
+- There is no onboarding window. Windows needs no Screen Recording permission, and Ctrl+Shift+4/5/6 are not Windows shortcuts.
+- At launch, and whenever a binding changes, Snapper registers its shortcuts. If one fails, a tray notification titled **"Shortcut unavailable"** says **"Ctrl+Shift+4 is used by another app. Change it in Settings."** (naming the binding). When several fail at once, one notification names them all ("Ctrl+Shift+4 and Ctrl+Shift+5 are used by other apps. Change them in Settings."). Snapper notifies only at launch and when a binding changes. It does not notify again when it silently retries an unchanged binding that failed before. Clicking the notification opens Settings on the Shortcuts tab. A failed shortcut stays usable from the tray menu.
+- Microphone permission is checked only when *Record microphone* is turned on (13.9) and when a recording starts (section 7, item 2).
+
+### 13.11 Acceptance criteria (Windows)
+
+Every criterion in section 12 applies to the Windows app with the 13.2 mapping, except the onboarding criterion, which is replaced by the shortcut-conflict criterion below. In addition:
+
+- [ ] Snapper runs with only a tray icon: no main window and no taskbar button until an annotation or Settings window opens.
+- [ ] Left- or right-clicking the tray icon opens the menu; while recording, a click stops and saves.
+- [ ] With monitors at different scales (for example 100% and 150%), the overlay matches the dragged area and the PNG has each monitor's native pixel size.
+- [ ] Overlays, the recording pill, and the border never appear in screenshots or recordings.
+- [ ] A shortcut that another app already holds produces the tray notification and the Settings warning; the other shortcuts keep working.
+- [ ] Launch at login adds and removes the `Run` registry value, and Snapper starts at the next sign-in.
+- [ ] Launching Snapper a second time opens the running instance's Settings and doesn't start a second tray icon.
+- [ ] `dotnet publish` produces a single `Snapper.exe` per architecture that runs on a clean Windows 11 machine without .NET installed.

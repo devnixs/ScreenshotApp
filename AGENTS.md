@@ -4,7 +4,7 @@ Guidance for AI coding agents working in this repository.
 
 ## Project
 
-**Snapper** is a macOS menu bar app with three global shortcuts: screenshot (⌘⇧4), screen recording (⌘⇧5), and capture-then-annotate (⌘⇧6).
+**Snapper** is a macOS menu bar app with three global shortcuts: screenshot (⌘⇧4), screen recording (⌘⇧5), and capture-then-annotate (⌘⇧6). A native Windows version with the same features lives in `windows/` (see "Windows app" below). Unless a section says it's about Windows, the rules in this file apply to the macOS app.
 
 **The source of truth for behavior is [`docs/PRD.md`](docs/PRD.md).** Read it before implementing a feature. If the code and the PRD disagree, or the PRD is silent on a decision, ask the user instead of guessing. Update the PRD in the same change whenever a decision changes.
 
@@ -67,6 +67,56 @@ Run the build and the tests before reporting work as done. Report failures as th
   Use `DisplayGeometry` for coordinate conversion, display lookup, drag clamping, and pixel alignment; feature code must not flip Y inline. `DisplayInfo.allCurrent()` is the main-actor AppKit adapter, and capture regions use the selected display's own backing scale.
 - Store preferences in `UserDefaults`, behind one typed settings type. Shortcuts are stored by `KeyboardShortcuts`.
 
+## Windows app (`windows/`)
+
+The Windows version is a separate native C# app in `windows/` with the same features. `docs/PRD.md` §13 lists every Windows difference. The macOS Swift sources and the specs in `docs/specs/done/` are the **reference implementation**. When porting a feature, read the matching Swift types and tests and port their behavior and test cases. Don't redesign them.
+
+### Stack
+
+- C# on **.NET 10**, nullable enabled, warnings as errors. Minimum OS **Windows 11** (build 22000).
+- **WPF** for all windows. The tray icon uses the WinForms `NotifyIcon` from .NET (`UseWindowsForms`, with the global `System.Windows.Forms`/`System.Drawing` usings removed to avoid ambiguities with WPF).
+- **Windows.Graphics.Capture** for all capture, **Media Foundation** for MP4 encode/re-encode and microphone audio, **WIC** for PNG/GIF, and `RegisterHotKey` for global shortcuts. Don't use GDI `BitBlt`/`PrintWindow` or Desktop Duplication for capture.
+- Dependencies: **Microsoft.Windows.CsWin32** (all Win32/COM/D3D11/Media Foundation/WIC interop, generated from `NativeMethods.txt`) and **xUnit** (tests only). Don't add others without asking. Versions are pinned centrally in `windows/Directory.Packages.props`.
+- Unpackaged, self-contained single-file publish for win-x64 and win-arm64. Per-Monitor V2 DPI awareness is declared in `app.manifest`.
+
+### Layout
+
+```
+windows/
+  Snapper.slnx
+  Directory.Build.props        # shared C# settings (LangVersion, Nullable, TreatWarningsAsErrors)
+  Directory.Packages.props     # central package versions
+  src/Snapper.Core/            # net10.0: pure logic, no Windows or WPF APIs (runs and tests on any OS)
+    Geometry/ App/ Capture/ Recording/ Annotate/Model/ Settings/ Support/
+  src/Snapper.Windows/         # net10.0-windows10.0.22621.0 WinExe: WPF + tray + interop
+    App/ Capture/ Recording/ Annotate/ Settings/ Support/ Interop/  app.manifest  NativeMethods.txt
+  tests/Snapper.Core.Tests/    # net10.0 xUnit tests for Snapper.Core
+```
+
+Namespaces follow the folders (`Snapper.Core.Annotate.Model`, `Snapper.Windows.Capture`, …).
+
+### Commands (they run on macOS too)
+
+```sh
+dotnet build windows/Snapper.slnx -c Debug       # builds Core, tests, and the WPF app (EnableWindowsTargeting)
+dotnet test windows/Snapper.slnx                 # runs Snapper.Core.Tests
+dotnet publish windows/src/Snapper.Windows -c Release -r win-x64    # or win-arm64
+```
+
+`Snapper.Windows` sets `EnableWindowsTargeting=true`, so it compiles on macOS but can only run on Windows. Every Windows spec must leave `dotnet build` and `dotnet test` green. GUI behavior is verified manually on a Windows 11 machine.
+
+### Architecture rules (Windows)
+
+- **Pure logic lives in `Snapper.Core`** and has xUnit tests. Use the same split as the macOS list above: the annotation model and undo, geometry, file naming, settings decisions, the app-mode machine, selection, window hit-testing, recording decisions, and pill placement. `Snapper.Core` must not reference WPF, WinForms, WinRT, or interop types. It uses its own primitives from `Snapper.Core.Geometry` (`PointD`, `SizeD`, `RectD`, `PixelRect`, …). Views only render the model and forward input.
+- **Coordinates:** global positions are **physical pixels** in virtual-screen coordinates (top-left origin, y down). DIPs exist only inside a window and are converted with that window's monitor DPI. Use `DisplayGeometry` (Core) for every pixel↔DIP conversion, monitor lookup, clamping, and pixel alignment. Position Snapper's own windows in physical pixels with `SetWindowPos`, not with WPF `Left`/`Top`. Mixed-DPI monitors are the most common source of bugs, so cover them with tests (100%/150%/200%, negative-origin monitors).
+- **Threading:** all UI runs on the WPF dispatcher thread. Capture (`FrameArrived`), Media Foundation, and audio callbacks run elsewhere and must marshal to the dispatcher before touching UI. Encoding never blocks the UI thread.
+- Overlays, the recording pill, and the border call `SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)`, and all Snapper windows are skipped by window hit-testing.
+- Annotation shapes are stored in **image pixel coordinates**. One renderer draws both the canvas and the export, and export renders at 96 DPI to the image's pixel size.
+- Preferences go through one typed settings type persisted as JSON (`%APPDATA%\Snapper\settings.json`), with the file path injectable for tests.
+- Wrap native handles and COM objects (`SafeHandle`, `using`, `Marshal.ReleaseComObject` where needed). No `!` null-forgiving operator outside tests, except for truly invariant cases, each with a comment.
+- Namespace pitfalls: the WPF application class is `SnapperApplication`. A class named `App` clashes with the `Snapper.Windows.App` namespace. Inside `namespace Snapper.Windows…`, an unqualified `Windows.*` resolves to `Snapper.Windows.*`, so import WinRT and CsWin32 namespaces with top-of-file `using` directives or write them as `global::Windows.…`.
+- User-facing strings follow PRD §13. Don't reuse macOS wording that names Mac concepts (Finder, ⌘, System Settings).
+
 ## Spec workflow
 
 Work is planned and built through specs in `docs/specs/`:
@@ -81,6 +131,8 @@ Screen Recording permission, global hotkeys, overlays, and recording all need a 
 1. Build the app.
 2. List the manual verification steps for the user, taken from the PRD's acceptance criteria.
 3. Never claim those paths are verified unless they were actually run.
+
+For Windows specs, the same rule applies: run `dotnet build` and `dotnet test` (both work on macOS), and list manual steps to run on a Windows 11 machine, taken from PRD §12/§13.11.
 
 Rebuilding with a different signature can reset the Screen Recording permission. If capture suddenly returns blank images or errors, check permission before debugging the code.
 

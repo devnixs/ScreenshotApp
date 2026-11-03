@@ -61,7 +61,8 @@ these are their decisions, not yours:
   the tree is dirty, ask what to do with the changes. Never stash or discard them yourself.
 - **Remote:** check for an upstream (`git rev-parse --abbrev-ref @{u}`). If there is one, each spec
   is pushed after it's committed. If there isn't, commits stay local, and you say so in the reports.
-- **Tooling:** `xcodegen` and `xcodebuild` must be on `PATH`. If `xcodegen` is missing, ask the
+- **Tooling:** for Windows specs (they touch `windows/`; titles say "Windows"), `dotnet` with the
+  .NET 10 SDK must be on `PATH`. For macOS specs, `xcodegen` and `xcodebuild` must be on `PATH`. If `xcodegen` is missing, ask the
   user to install it (for example `brew install xcodegen`). Don't install tools on your own.
 
 ### 2. Determine the queue
@@ -96,7 +97,9 @@ When a sub-agent returns, confirm it actually finished the job before you start 
   a **Verification status** section.
 - There is a new commit on `main` and `git status` is clean. If there's an upstream, it has been
   pushed (`git status -sb` shows the branch even with its upstream).
-- `xcodebuild -scheme Snapper test` is green. Re-run it yourself; a cheap check is worth it.
+- The test run for the spec's platform is green: `xcodebuild -scheme Snapper test` for macOS specs,
+  `dotnet build windows/Snapper.slnx -c Debug && dotnet test windows/Snapper.slnx` for Windows specs.
+  Re-run it yourself; a cheap check is worth it.
 
 If anything is missing or red, fix it yourself before starting the next spec. Don't ask the user:
 
@@ -141,9 +144,20 @@ guardrails: sub-agents start with none of your context, so everything they need 
 prompt.
 
 ```
-You are implementing ONE spec for Snapper, a macOS menu bar screenshot/recording/annotation app
-(Swift 6, AppKit + SwiftUI, ScreenCaptureKit), end to end, on the `main` branch. Work in
+You are implementing ONE spec for Snapper, a screenshot/recording/annotation app with a macOS
+version (Swift 6, AppKit + SwiftUI, ScreenCaptureKit, at the repo root) and a Windows version
+(C# .NET 10, WPF, Windows.Graphics.Capture, in windows/), end to end, on the `main` branch. Work in
 the repository root.
+
+IF THE SPEC IS A WINDOWS SPEC (it targets windows/): the "Windows app" section of AGENTS.md and
+docs/PRD.md §13 replace the macOS-specific rules below. Use C#, put pure logic in
+windows/src/Snapper.Core with xUnit tests in windows/tests/Snapper.Core.Tests, use the
+Windows commands instead of xcodegen/xcodebuild in steps 2 and 4:
+     dotnet build windows/Snapper.slnx -c Debug
+     dotnet test windows/Snapper.slnx
+(filter while iterating: --filter FullyQualifiedName~<TestClass>), and write manual verification
+steps for a Windows 11 machine. The Swift sources and done specs are the reference implementation:
+port their behavior and test cases. Never touch the macOS app in a Windows spec.
 
 Spec to implement: <SPEC_PATH>
 
