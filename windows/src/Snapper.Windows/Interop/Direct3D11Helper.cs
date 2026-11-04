@@ -58,6 +58,11 @@ internal sealed class Direct3D11Helper : IDisposable
         public bool VideoSupport { get; }
         private readonly ID3D11Device device;
         private readonly ID3D11DeviceContext context;
+        // WGC invokes frame callbacks in the MTA. Calling an STA-created RCW there asks COM
+        // to marshal D3D interfaces, which do not support that projection (E_NOINTERFACE).
+        // Keep independently owned native interfaces for these thread-safe D3D calls.
+        private readonly nint nativeDevice;
+        private readonly nint nativeContext;
         public IDirect3DDevice WinRtDevice { get; }
         public ID3D11Device Device => device;
         public ID3D11DeviceContext Context => context;
@@ -65,39 +70,67 @@ internal sealed class Direct3D11Helper : IDisposable
         {
             VideoSupport = videoSupport;
             var flags = D3D11_CREATE_DEVICE_FLAG.D3D11_CREATE_DEVICE_BGRA_SUPPORT | (videoSupport ? D3D11_CREATE_DEVICE_FLAG.D3D11_CREATE_DEVICE_VIDEO_SUPPORT : 0);
-            var result = PInvoke.D3D11CreateDevice(null, D3D_DRIVER_TYPE.D3D_DRIVER_TYPE_HARDWARE, default,
-                flags, default, PInvoke.D3D11_SDK_VERSION,
-                out var createdDevice, out var createdContext);
-            if (result.Failed)
-            {
-                Release(createdContext); Release(createdDevice);
-                PInvoke.D3D11CreateDevice(null, D3D_DRIVER_TYPE.D3D_DRIVER_TYPE_WARP, default,
-                    flags, default, PInvoke.D3D11_SDK_VERSION,
-                    out createdDevice, out createdContext).ThrowOnFailure();
-            }
-            device = createdDevice; context = createdContext;
+            ID3D11Device? createdDevice = null;
+            ID3D11DeviceContext? createdContext = null;
             try
             {
+                var result = PInvoke.D3D11CreateDevice(pAdapter: null, DriverType: D3D_DRIVER_TYPE.D3D_DRIVER_TYPE_HARDWARE,
+                    Software: default, Flags: flags, pFeatureLevels: default, SDKVersion: PInvoke.D3D11_SDK_VERSION,
+                    ppDevice: out createdDevice, ppImmediateContext: out createdContext);
+                if (result.Failed)
+                {
+                    Release(createdContext); createdContext = null;
+                    Release(createdDevice); createdDevice = null;
+                    PInvoke.D3D11CreateDevice(pAdapter: null, DriverType: D3D_DRIVER_TYPE.D3D_DRIVER_TYPE_WARP,
+                        Software: default, Flags: flags, pFeatureLevels: default, SDKVersion: PInvoke.D3D11_SDK_VERSION,
+                        ppDevice: out createdDevice, ppImmediateContext: out createdContext).ThrowOnFailure();
+                }
+                device = createdDevice; context = createdContext;
+                nativeDevice = NativeInterface<ID3D11Device_unmanaged>(device);
+                nativeContext = NativeInterface<ID3D11DeviceContext_unmanaged>(context);
                 ((ID3D11Multithread)context).SetMultithreadProtected(true);
                 if (videoSupport) ((global::Windows.Win32.Graphics.Direct3D10.ID3D10Multithread)device).SetMultithreadProtected(true);
-                PInvoke.CreateDirect3D11DeviceFromDXGIDevice((IDXGIDevice)device, out var inspectable).ThrowOnFailure();
+                global::Windows.Win32.System.WinRT.IInspectable? inspectable = null;
                 try
                 {
+                    PInvoke.CreateDirect3D11DeviceFromDXGIDevice((IDXGIDevice)device, out inspectable).ThrowOnFailure();
                     var pointer = Marshal.GetIUnknownForObject(inspectable);
                     try { WinRtDevice = MarshalInterface<IDirect3DDevice>.FromAbi(pointer); }
                     finally { Marshal.Release(pointer); }
                 }
                 finally { Release(inspectable); }
             }
-            catch { Release(context); Release(device); throw; }
+            catch
+            {
+                if (nativeContext != 0) Marshal.Release(nativeContext);
+                if (nativeDevice != 0) Marshal.Release(nativeDevice);
+                Release(createdContext); Release(createdDevice);
+                throw;
+            }
         }
         public void AddReference() => Interlocked.Increment(ref references);
         public void ReleaseReference()
         {
             if (Interlocked.Decrement(ref references) != 0) return;
-            WinRtDevice.Dispose(); Release(context); Release(device);
+            try { WinRtDevice.Dispose(); }
+            finally
+            {
+                Marshal.Release(nativeContext); Marshal.Release(nativeDevice);
+                Release(context); Release(device);
+            }
         }
         private static void Release(object? value) { if (value is not null && Marshal.IsComObject(value)) Marshal.ReleaseComObject(value); }
+        private static nint NativeInterface<T>(object value) where T : unmanaged
+        {
+            var unknown = Marshal.GetIUnknownForObject(value);
+            try
+            {
+                var iid = typeof(T).GUID;
+                Marshal.ThrowExceptionForHR(Marshal.QueryInterface(unknown, in iid, out var pointer));
+                return pointer; // The caller owns the QueryInterface reference.
+            }
+            finally { Marshal.Release(unknown); }
+        }
 
         public unsafe ID3D11Texture2D GetTexture(IDirect3DSurface surface)
         {
@@ -121,7 +154,7 @@ internal sealed class Direct3D11Helper : IDisposable
                 CPUAccessFlags = D3D11_CPU_ACCESS_FLAG.D3D11_CPU_ACCESS_READ
             };
             ID3D11Texture2D_unmanaged* pointer = null;
-            device.CreateTexture2D(&description, null, &pointer);
+            ((ID3D11Device_unmanaged*)nativeDevice)->CreateTexture2D(&description, null, out pointer);
             try { return (ID3D11Texture2D)Marshal.GetObjectForIUnknown((nint)pointer); }
             finally { Marshal.Release((nint)pointer); }
         }
@@ -131,15 +164,21 @@ internal sealed class Direct3D11Helper : IDisposable
             {
                 ID3D11Texture2D? texture = null;
                 ID3D11Texture2D? staging = null;
+                nint sourcePointer = 0, stagingPointer = 0;
                 try
                 {
                     texture = GetTexture(surface);
                     staging = CreateStagingTexture(crop.Width, crop.Height);
+                    sourcePointer = NativeInterface<ID3D11Resource_unmanaged>(texture);
+                    stagingPointer = NativeInterface<ID3D11Resource_unmanaged>(staging);
                     var box = new D3D11_BOX { left = (uint)crop.Left, top = (uint)crop.Top,
                         right = (uint)crop.Right, bottom = (uint)crop.Bottom, front = 0, back = 1 };
-                    context.CopySubresourceRegion(staging, 0, 0, 0, 0, texture, 0, &box);
+                    var immediateContext = (ID3D11DeviceContext_unmanaged*)nativeContext;
+                    var stagingResource = (ID3D11Resource_unmanaged*)stagingPointer;
+                    immediateContext->CopySubresourceRegion(stagingResource, 0, 0, 0, 0,
+                        (ID3D11Resource_unmanaged*)sourcePointer, 0, &box);
                     D3D11_MAPPED_SUBRESOURCE mapped;
-                    context.Map(staging, 0, D3D11_MAP.D3D11_MAP_READ, 0, &mapped);
+                    immediateContext->Map(stagingResource, 0, D3D11_MAP.D3D11_MAP_READ, 0, &mapped);
                     try
                     {
                         var bytes = new byte[checked(crop.Width * crop.Height * 4)];
@@ -148,9 +187,14 @@ internal sealed class Direct3D11Helper : IDisposable
                             crop.Width, crop.Height, bytes);
                         return new CapturedImage(crop.Width, crop.Height, bytes, scale);
                     }
-                    finally { context.Unmap(staging, 0); }
+                    finally { immediateContext->Unmap(stagingResource, 0); }
                 }
-                finally { Release(staging); Release(texture); }
+                finally
+                {
+                    if (stagingPointer != 0) Marshal.Release(stagingPointer);
+                    if (sourcePointer != 0) Marshal.Release(sourcePointer);
+                    Release(staging); Release(texture);
+                }
             }
         }
     }

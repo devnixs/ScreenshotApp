@@ -17,7 +17,9 @@ public sealed class AtomicFileWriterTests : IDisposable
     {
         var target = Path.Combine(folder, "image.png"); Directory.CreateDirectory(target);
         var retained = Path.Combine(target, "keep"); File.WriteAllBytes(retained, [9]);
-        Assert.ThrowsAny<IOException>(() => AtomicFileWriter.Replace(target, [1, 2]));
+        // Replacing a directory is an access error on Windows and an I/O error on Unix.
+        var error = Record.Exception(() => AtomicFileWriter.Replace(target, [1, 2]));
+        Assert.True(error is IOException or UnauthorizedAccessException, $"Unexpected failure: {error}");
         Assert.Equal(new byte[] { 9 }, File.ReadAllBytes(retained));
         Assert.Equal(new[] { target }, Directory.GetFileSystemEntries(folder));
     }

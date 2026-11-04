@@ -162,3 +162,38 @@ annotation, without Snapper failing to initialize its Direct3D device.
 - New capture backends, GPU-selection UI, dependency upgrades, or generalized COM refactoring.
 - Changes to image output policy, error wording, DPI geometry, permissions, and recording format.
 - macOS changes or marking earlier GUI acceptance checks complete without executing them.
+
+## Implementation notes
+
+The native `D3D11CreateDevice` declaration and its generated eight-argument span wrapper were inspected with CsWin32 0.3.367. The wrapper supplies the feature-level pointer/count in the documented order; the generated device and context GUIDs are correct. Device creation was not the failing operation.
+
+On Windows 11 x64, a temporary diagnostic harness invoked the actual `ScreenshotCapturer` on a WPF dispatcher. The original helper acquired its device on the STA successfully, then the first free-threaded WGC frame callback failed in `DeviceResources.CreateStagingTexture` when calling `ID3D11Device.CreateTexture2D`. The stack entered `StubHelpers.GetCOMIPFromRCWSlow` and reproduced the reported `InvalidCastException`, device IID and `0x80004002` exactly. Acquiring the device/bridge alone on STA or MTA did not reproduce it: crossing from the STA-created RCW to the MTA callback was required.
+
+The helper now retains independently owned native device/context interfaces obtained with `QueryInterface` and uses CsWin32's generated unmanaged methods for staging creation and screenshot copy/map/unmap. Those generated creation/map methods check the native HRESULT with `ThrowOnFailure` before returning. The native references belong to the device generation and survive reset/disposal until its last lease ends; texture resource interfaces are released after each copy. Recording retains its existing MTA device/context use, shared context lock and video-support upgrade. Named creation parameters clarify the ABI, and initialization cleanup now also covers failed WARP creation and bridge projection. No dependency, capture backend, coordinate or output-policy changes were made.
+
+The two existing Windows suite failures from the earlier verification report were repaired while bringing the required full suite green: settings JSON explicitly selects LF as required by completed spec 0027, and the atomic-write failure test accepts Windows' `UnauthorizedAccessException` as well as Unix's `IOException` before verifying preservation and temporary-file cleanup. No pure capture decision changed, so a Core mock test would not validate this COM apartment correction and no new Core test was added.
+
+AGENTS.md now records the native-interface rule for free-threaded capture callbacks. The PRD requires no change because this restores its existing capture behavior.
+
+## Verification status
+
+Automated build/tests and native diagnostic verification completed **2026-11-04**. GUI acceptance remains **not yet run by user**.
+
+- **Debug solution build: PASS**, zero warnings and errors. Command: `dotnet build windows/Snapper.slnx -c Debug -p:OutputPath=C:/Projects/CSharp/ScreenshotApp/windows/artifacts/validation-bin/`. An existing Snapper process locked the usual Debug output; it was preserved, and validation used an isolated output directory instead.
+- **Full Core suite: PASS**, `dotnet test windows/Snapper.slnx`: 1,379 passed, 0 failed, 4 skipped, 1,383 total. The four existing physical-filesystem skips are not passes.
+- **Publish: PASS** for both existing `win-x64` and `win-arm64` profiles. Artifact creation does not prove clean-machine or native Arm64 execution.
+- **Before/after native reproduction: PASS** on x64. The original actual screenshot path reproduced the reported cast failure on its first callback. With the correction, three 128 × 128 monitor captures returned 65,536-byte buffers across repeated capture, video-support upgrade and reset. A controlled 320 × 240 red diagnostic window captured with center BGRA exactly `0,0,255,255`.
+- **Native lifetime checks: PASS** on STA and MTA: screenshot and video-support generations could create staging textures after reset, and a live lease remained usable after helper disposal.
+- **Hardware/WARP creation and bridge: PASS** on x64. Direct native hardware and WARP calls without video support returned S_OK and supported the device/context/DXGI interface queries and WinRT bridge. A documented invalid hardware attempt (`D3D_DRIVER_TYPE_UNKNOWN` with no adapter) returned `0x80070057`, followed by WARP S_OK; actual monitor captures across reset and the controlled red-window pixel check then passed. WARP with video support returned `0x887A0004` on this host; existing video-support requirements and fallback policy were preserved.
+- **Injected initialization failure/recovery: exercised**. Making both creation attempts invalid produced `ArgumentException`, `0x80070057`; injecting a projection failure after successful native WinRT bridge creation produced `COMException`, `0x80004005`. The same helper acquired a valid generation after each failure, followed by successful monitor/window captures. Cleanup paths were inspected for balanced native references and RCWs; no native leak counter or driver fault injection was used.
+- Diagnostic harnesses and forced-failure changes were temporary and are not shipped. Native diagnostics do not establish tray/hotkey, clipboard, annotation focus, playable recording, DPI, capture exclusion, or published executable GUI acceptance. No native Arm64 hardware was available.
+
+Manual verification checklist (the detailed procedures in Test plan above still apply):
+
+- [ ] **Not yet run by user:** fresh Debug process, rectangle capture with Both destination, repeat capture, verify saved PNG and clipboard pixels, no cursor/overlay/error.
+- [ ] **Not yet run by user:** window capture of a partly covered window, then Save to file and Copy to clipboard separately; verify full window without shadow and only the selected outputs.
+- [ ] **Not yet run by user:** capture on available 100%/150%/200% and negative-origin monitors; verify physical-pixel content and dimensions.
+- [ ] **Not yet run by user:** rectangle/window annotation capture opens a focused editor with the correct image.
+- [ ] **Not yet run by user:** screenshot → rectangle/window recording → screenshot; save/reveal playable MP4 with cursor and no pill/border.
+- [ ] **Not yet run by user:** repeat the specified capture/annotation/recording checks using published x64, and native Arm64 when available; record unavailable architecture coverage.
+- [ ] **Not yet run by user:** genuine capture failure shows the existing alert, returns to idle and permits another successful capture.
