@@ -23,10 +23,15 @@ internal partial class SettingsWindow : Window
     {
         InitializeComponent();
         DataContext = model; model.Window = this;
-        FocusManager.SetFocusedElement(this, Tabs);
+        FocusManager.SetFocusedElement(this, Tabs.SelectedItem as TabItem);
         Activated += (_, _) => model.RefreshOnActivate();
         IsVisibleChanged += (_, _) => { if (!IsVisible) model.SettingsHidden(); };
-        Tabs.SelectionChanged += (_, e) => { if (e.Source == Tabs && SelectedTab == SettingsTab.Recording) model.ReconcileMicrophone(); };
+        Tabs.SelectionChanged += (_, e) =>
+        {
+            if (e.Source != Tabs) return;
+            FocusTabs();
+            if (SelectedTab == SettingsTab.Recording) model.ReconcileMicrophone();
+        };
         PreviewMouseDown += (_, e) =>
         {
             // Blank labels/panels do not take keyboard focus by themselves.
@@ -60,11 +65,30 @@ internal partial class SettingsWindow : Window
     }
     public void FocusTabs()
     {
-        FocusManager.SetFocusedElement(this, Tabs);
-        Keyboard.Focus(Tabs);
+        if (Tabs.SelectedItem is not TabItem header) return;
+        FocusManager.SetFocusedElement(this, header);
+        Keyboard.Focus(header);
     }
     private void ChooseFolder(object sender, RoutedEventArgs e) { if (DataContext is SettingsViewModel model) model.ChooseSaveFolder(); }
     private void OpenFolder(object sender, RoutedEventArgs e) { if (DataContext is SettingsViewModel model) model.OpenSaveFolder(); }
     private void OpenMicrophonePrivacy(object sender, RoutedEventArgs e) => SettingsViewModel.OpenMicrophonePrivacy();
     private void OpenStartupApps(object sender, RoutedEventArgs e) => LaunchAtLogin.OpenStartupApps();
+}
+
+/// <summary>Tab selection stays on the header until the user traverses into its content.</summary>
+internal sealed class SettingsTabItem : TabItem
+{
+    protected override void OnPreviewGotKeyboardFocus(KeyboardFocusChangedEventArgs e)
+    {
+        if (e.NewFocus != this)
+        {
+            base.OnPreviewGotKeyboardFocus(e);
+            return;
+        }
+        // TabControl selects/focuses before SelectionChanged. TabItem's implementation
+        // can forward this focus straight into the first recorder, briefly suspending
+        // hotkeys even if a later handler corrects it. Select here without that redirect.
+        // Native Tab/Shift+Tab traversal into the content remains unchanged.
+        SetCurrentValue(IsSelectedProperty, true);
+    }
 }

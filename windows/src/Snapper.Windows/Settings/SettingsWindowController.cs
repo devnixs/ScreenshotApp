@@ -12,6 +12,8 @@ internal sealed class SettingsWindowController(SettingsViewModel model) : IDispo
         window ??= new SettingsWindow(model);
         window.SelectedTab = SettingsTabSelection.Resolve(tab, window.SelectedTab, window.AvailableTabs);
         model.RefreshOnActivate();
+        // Replace remembered content focus before restoring/showing can activate a recorder.
+        window.FocusTabs();
         if (window.WindowState == WindowState.Minimized) window.WindowState = WindowState.Normal;
         window.Show(); window.Activate(); window.FocusTabs();
         PInvoke.SetForegroundWindow(new HWND(new WindowInteropHelper(window).Handle));

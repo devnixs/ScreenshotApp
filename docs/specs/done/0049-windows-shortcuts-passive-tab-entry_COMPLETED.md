@@ -61,3 +61,25 @@ As a Windows Snapper user, I can inspect my shortcuts without being prompted to 
 - Changing shortcut validation, reserved keys, registration-conflict notifications, or the settings persistence format.
 - Changing macOS recorder behavior or redesigning the Settings window.
 - Direct3D capture failure work in 0048; this spec has no dependency on it.
+
+## Verification status
+
+Implemented 2026-11-04. Build and automated tests are green; user GUI acceptance remains pending.
+
+- `dotnet build windows/Snapper.slnx -c Debug -p:OutputPath=C:/Projects/CSharp/ScreenshotApp/windows/artifacts/validation-0049-bin/`: passed, 0 warnings and 0 errors. The separate output directory avoids replacing the executable locked by the user's running Snapper process; that process was not stopped.
+- `dotnet test windows/Snapper.slnx`: passed, **1,379 passed, 0 failed, 4 skipped, 1,383 total**. This includes `ShortcutRecorderSessionTests` and `SettingsTabSelectionTests`. The four existing filesystem/platform skips remain skips.
+- No new Core tests or pure decisions were added. The correction concerns WPF focus ordering, outside the platform-independent test target; recorder session and tab-selection semantics are unchanged.
+- A temporary ignored WPF diagnostic harness instantiated the actual `SettingsWindow` with an in-memory settings store and counted injected suspend/resume effects. It used synthetic routed header mouse events, direct selection changes and WPF `MoveFocus`, rather than physical input or the running Snapper instance. Before the correction, clicking Shortcuts from a focused General checkbox produced `CheckBox -> TabItem -> ShortcutRecorder`, immediately suspending hotkeys. Programmatic tab entry and hide/show also started a recorder.
+- After the correction, the same header event stopped at `SettingsTabItem`, with **zero recorder starts/suspensions** on passive entry. Direct selection before showing Shortcuts, programmatic selection, clicking the selected header, ten General/Recording/Shortcuts round trips, left/right header traversal, idle and active hide/show, and deactivation/reactivation retained neutral header focus without restarting a session. Nested selector changes did not steal recorder focus. Deliberate focus and native forward/reverse traversal entered recorders normally; the expanded run ended with **6 deliberate starts and 6 corresponding resumes**.
+- Diagnosis agrees with the .NET WPF implementation: [`TabControl.OnSelectionChanged`](https://github.com/dotnet/wpf/blob/main/src/Microsoft.DotNet.Wpf/src/PresentationFramework/System/Windows/Controls/TabControl.cs) updates content/focus before raising the selection event, and [`TabItem.OnPreviewGotKeyboardFocus`](https://github.com/dotnet/wpf/blob/main/src/Microsoft.DotNet.Wpf/src/PresentationFramework/System/Windows/Controls/TabItem.cs) can forward header focus into content. `SettingsTabItem` selects a focused header without that forwarding; descendant focus and native content traversal keep their existing behavior. `FocusTabs()` now targets the selected header, and `Show()` replaces remembered content focus before showing/activating the window.
+- PRD §13.9/§13.11 already contain the approved focus behavior, so no PRD change was needed. No architecture, dependencies, project targets, schema or macOS sources changed.
+
+Manual verification (Windows 11, matching the seven steps above):
+
+- [ ] not yet run by user: Open Settings → Shortcuts without entering a field; confirm idle bindings and a working Screenshot global shortcut, then cancel capture with Esc.
+- [ ] not yet run by user: Switch among all tabs ten times and click the selected Shortcuts header; confirm no recording highlight, transient suspension or binding change.
+- [ ] not yet run by user: Navigate tab headers with the keyboard, then deliberately traverse recorders with Tab/Shift+Tab; confirm passive headers and normal forward/reverse recorder entry.
+- [ ] not yet run by user: Click every recorder, cancel with Esc, set and restore a valid binding, and exercise invalid/duplicate chords; confirm existing validation and resumed global shortcuts.
+- [ ] not yet run by user: Leave an active recorder through tab change, Alt+Tab, close/reopen and minimize/restore, including with modifiers held; confirm no restarted recording or stale modifiers.
+- [ ] not yet run by user: Reopen with Shortcuts remembered and enter through a shortcut-unavailable notification when available; confirm the selected tab/conflict warning and idle fields.
+- [ ] not yet run by user: Clear Screenshot with ×, revisit to see idle "Record Shortcut", restore its binding and restart Snapper to check persistence.
