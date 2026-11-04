@@ -9,6 +9,7 @@ using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.Graphics.Direct3D11;
 using System.Runtime.InteropServices;
+using System.Diagnostics;
 using Windows.Graphics.DirectX;
 namespace Snapper.Windows.Recording;
 
@@ -107,7 +108,11 @@ internal sealed class CaptureFrameSource : IDisposable
                     poolSize = content;
                 }
             }
-            catch (Exception error) { failure = error; }
+            catch (Exception error)
+            {
+                Debug.WriteLine($"Snapper: Recording frame submission: {configuration}; {error.GetType().FullName}, HRESULT=0x{error.HResult:X8}: {error}");
+                failure = error;
+            }
         }
         if (failure is not null) Failed?.Invoke(failure);
     }

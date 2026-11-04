@@ -43,6 +43,8 @@ internal sealed class Mp4Writer : IDisposable
     private volatile bool abort;
     private bool accepting = true;
     private bool disposed;
+    private string startupStage = "MFStartup";
+    private bool hardwareAttempt;
     public ManualResetEventSlim Completed { get; } = new(false);
     public long? TimelineOriginQpc { get { var value = Interlocked.Read(ref originQpc); return value == long.MinValue ? null : value; } }
     public bool HasAudio => audio is not null;
@@ -69,13 +71,19 @@ internal sealed class Mp4Writer : IDisposable
         {
             WriterStarted(); runtimeActive = true;
             try { Create(true); }
-            catch (Exception error) { Debug.WriteLine($"Snapper: Using CPU encoder: {error.Message}"); ResetForFallback(); Create(false); }
+            catch (Exception error) { LogFailure(error); ResetForFallback(); Create(false); }
             created.TrySetResult(this);
             begin.Wait();
             if (!abort)
             {
+                startupStage = "BeginWriting";
                 try { lock (sinkGate) RequireSink().BeginWriting(); }
-                catch when (allocator is not null) { ResetForFallback(); Create(false); lock (sinkGate) RequireSink().BeginWriting(); }
+                catch (Exception error) when (allocator is not null)
+                {
+                    LogFailure(error); ResetForFallback(); Create(false);
+                    startupStage = "BeginWriting";
+                    lock (sinkGate) RequireSink().BeginWriting();
+                }
                 began.TrySetResult();
                 foreach (var (sample, time) in queue.GetConsumingEnumerable())
                 {
@@ -96,6 +104,7 @@ internal sealed class Mp4Writer : IDisposable
                         if (audio is { } format && audioSamplesWritten == 0 && samplesWritten > 0)
                             WriteAudioSample(new(0, 0, Math.Max(1, format.SampleRate / configuration.FramesPerSecond), true), []);
                         finishing = true;
+                        startupStage = "Finalize";
                         RequireSink().Finalize();
                     }
                 }
@@ -103,8 +112,8 @@ internal sealed class Mp4Writer : IDisposable
         }
         catch (Exception error)
         {
+            LogFailure(error);
             failure = error;
-            created.TrySetException(error); began.TrySetException(error);
             if (!abort && Interlocked.Read(ref samplesWritten) > 0)
                 try { lock (sinkGate) { finishing = true; sink?.Finalize(); } } catch (Exception finalize) { Debug.WriteLine($"Snapper: Finalizing partial recording: {finalize.Message}"); }
         }
@@ -119,6 +128,10 @@ internal sealed class Mp4Writer : IDisposable
             ReleaseSink();
             if (runtimeActive) WriterEnded();
             Completed.Set();
+            // A failed CreateAsync caller has no writer instance to wait on. Publish its
+            // failure only after the sink releases its file and stops using the device lease.
+            if (failure is not null) { created.TrySetException(failure); began.TrySetException(failure); }
+            else if (abort) { created.TrySetCanceled(); began.TrySetCanceled(); }
         }
         // The same writer thread posts first-sample before all completion callbacks; dispatcher FIFO preserves startup order.
         if (abort) return;
@@ -126,8 +139,13 @@ internal sealed class Mp4Writer : IDisposable
         else Failed?.Invoke(new RecordingFailure(failure.Message), FileHasContent);
     }
     private IMFSinkWriter RequireSink() => sink ?? throw new ObjectDisposedException(nameof(Mp4Writer));
+    private void LogFailure(Exception error) => Debug.WriteLine(
+        $"Snapper: Recording {startupStage}; hardware={hardwareAttempt}, {configuration}, audioIncluded={audio is not null}, audio={audio}; " +
+        $"{error.GetType().FullName}, HRESULT=0x{error.HResult:X8}: {error}");
     private void Create(bool hardware)
     {
+        hardwareAttempt = hardware;
+        startupStage = "MFCreateAttributes";
         PInvoke.MFCreateAttributes(out var attributes, 3).ThrowOnFailure();
         IMFMediaType? output = null, input = null;
         try
@@ -136,22 +154,29 @@ internal sealed class Mp4Writer : IDisposable
             attributes.SetGUID(PInvoke.MF_TRANSCODE_CONTAINERTYPE, PInvoke.MFTranscodeContainerType_MPEG4);
             if (hardware)
             {
+                startupStage = "DXGI device manager";
                 PInvoke.MFCreateDXGIDeviceManager(out var token, out var createdManager).ThrowOnFailure(); manager = createdManager;
                 manager.ResetDevice(device.Device, token);
                 attributes.SetUnknown(PInvoke.MF_SINK_WRITER_D3D_MANAGER, manager);
             }
+            startupStage = "MFCreateSinkWriterFromURL";
             PInvoke.MFCreateSinkWriterFromURL(path, null, attributes, out var createdSink).ThrowOnFailure(); sink = createdSink;
+            startupStage = "output media type attributes";
             PInvoke.MFCreateMediaType(out output).ThrowOnFailure(); ConfigureType(output, PInvoke.MFVideoFormat_H264);
             output.SetUINT32(PInvoke.MF_MT_AVG_BITRATE, (uint)configuration.VideoBitrate);
             output.SetUINT32(PInvoke.MF_MT_MPEG2_PROFILE, (uint)eAVEncH264VProfile.eAVEncH264VProfile_High);
             output.SetUINT32(PInvoke.MF_MT_YUV_MATRIX, (uint)MFVideoTransferMatrix.MFVideoTransferMatrix_BT709);
+            startupStage = "AddStream(video)";
             lock (sinkGate) RequireSink().AddStream(output, out videoStream);
+            startupStage = "input media type attributes";
             PInvoke.MFCreateMediaType(out input).ThrowOnFailure(); // GPU allocator textures must match WGC B8G8R8A8; RGB32 maps to B8G8R8X8.
             ConfigureType(input, hardware ? PInvoke.MFVideoFormat_ARGB32 : PInvoke.MFVideoFormat_RGB32);
             input.SetUINT32(PInvoke.MF_MT_DEFAULT_STRIDE, checked((uint)configuration.PixelWidth * 4));
+            startupStage = "SetInputMediaType(video)";
             lock (sinkGate) RequireSink().SetInputMediaType(videoStream, input, null);
             if (hardware)
             {
+                startupStage = "video sample allocator creation";
                 PInvoke.MFCreateVideoSampleAllocatorEx(out IMFVideoSampleAllocatorEx createdAllocator).ThrowOnFailure(); allocator = createdAllocator;
                 allocator.SetDirectXManager(manager ?? throw new InvalidOperationException("Missing device manager."));
                 PInvoke.MFCreateAttributes(out var allocatorAttributes, 2).ThrowOnFailure();
@@ -159,8 +184,10 @@ internal sealed class Mp4Writer : IDisposable
                 {
                     allocatorAttributes.SetUINT32(PInvoke.MF_SA_D3D11_BINDFLAGS, (uint)D3D11_BIND_FLAG.D3D11_BIND_RENDER_TARGET);
                     allocatorAttributes.SetUINT32(PInvoke.MF_SA_D3D11_USAGE, (uint)D3D11_USAGE.D3D11_USAGE_DEFAULT);
+                    startupStage = "InitializeSampleAllocatorEx";
                     allocator.InitializeSampleAllocatorEx(4, 8, allocatorAttributes, input);
                     // Validate the allocated texture before capture: incompatible GPU copies have no HRESULT.
+                    startupStage = "allocator texture validation";
                     allocator.AllocateSample(out var probe);
                     try { ValidateTexture(probe); }
                     finally { Release(probe); }
@@ -173,6 +200,7 @@ internal sealed class Mp4Writer : IDisposable
     }
     private void AddAudioStream(AudioFormatChoice format)
     {
+        startupStage = "audio media types and stream negotiation";
         PInvoke.MFCreateMediaType(out var output).ThrowOnFailure();
         IMFMediaType? input = null;
         try
@@ -221,10 +249,21 @@ internal sealed class Mp4Writer : IDisposable
     }
     private void Write(IMFSample sample, long time)
     {
+        startupStage = "video sample metadata";
         var relative = time - (TimelineOriginQpc ?? time);
         sample.SetSampleTime(relative); sample.SetSampleDuration((long)Math.Round(configuration.FrameIntervalTicks));
         lock (sinkGate)
         {
+            if (allocator is not null)
+            {
+                // GPU copies do not update IMFMediaBuffer's valid-data length. Allocated
+                // frames start at zero, which makes WriteSample reject them with E_INVALIDARG.
+                // This applies to both captured frames and the final held frame.
+                sample.GetBufferByIndex(0, out var buffer);
+                try { buffer.GetMaxLength(out var length); buffer.SetCurrentLength(length); }
+                finally { Release(buffer); }
+            }
+            startupStage = "WriteSample(video)";
             RequireSink().WriteSample(videoStream, sample);
             Interlocked.CompareExchange(ref originQpc, time, long.MinValue);
             lastVideoTime = relative;

@@ -53,6 +53,20 @@ public sealed class RecordingLifecycleTests
         var l=Starting(); l.Handle(new RecordingEvent.StopRequested());
         Assert.Equal([Delete,new RecordingEffect.ShowError(Failure),Ended],l.Handle(new RecordingEvent.CaptureFailedToStart(Failure)));
     }
+    [Theory, InlineData(0), InlineData(1), InlineData(2)] public void StartupFailureEndsOnceDespiteLateNativeCallbacks(int pending)
+    {
+        var l = Starting();
+        if (pending == 1) l.Handle(new RecordingEvent.StopRequested());
+        if (pending == 2) l.Handle(new RecordingEvent.CancelRequested());
+        Assert.Equal([Delete, new RecordingEffect.ShowError(Failure), Ended], l.Handle(new RecordingEvent.CaptureFailedToStart(Failure)));
+        var failed = new RecordingPhase.Failed(Failure);
+        Assert.Equal(failed, l.Phase);
+        foreach (var callback in LateEvents)
+        {
+            Assert.Empty(l.Handle(callback));
+            Assert.Equal(failed, l.Phase);
+        }
+    }
     [Fact] public void StreamAlreadyStoppedWaitsForWriter()
     {
         var l=Started(); Assert.Equal([Timeout],l.Handle(new RecordingEvent.StreamStopped(Failure)));

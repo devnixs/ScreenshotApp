@@ -46,6 +46,14 @@ public sealed class RecordingConfigurationBuilderTests
         Assert.Equal(12_441_600, RecordingConfigurationBuilder.Build(Display(new(0,0,1920,1080)), new(0,0,1920,1080)).VideoBitrate);
         Assert.Equal(1_000_000, RecordingConfigurationBuilder.Build(Display(new(0,0,1920,1080)), new(0,0,2,2)).VideoBitrate);
     }
+    [Fact] public void ReproducingStartupRectangleKeepsNativeCropAndBitrate()
+    {
+        // Native WriteSample regression: 800x600 BGRA on the diagnostic 1920x1080/96-DPI display.
+        var c = RecordingConfigurationBuilder.Build(Display(new(0, 0, 1920, 1080)), new(100, 100, 800, 600));
+        Assert.Equal(new PixelRect(100, 100, 800, 600), c.SourceRect);
+        Assert.Equal(800, c.PixelWidth); Assert.Equal(600, c.PixelHeight);
+        Assert.Equal(30, c.FramesPerSecond); Assert.Equal(2_880_000, c.VideoBitrate);
+    }
     [Fact] public void RejectsImpossibleConfiguration()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => RecordingConfigurationBuilder.Build(Display(new(0,0,100,100)), new(0,0,10,10), framesPerSecond: 0));

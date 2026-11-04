@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using Snapper.Core.Geometry;
 using Snapper.Core.Recording;
 using Snapper.Windows.Interop;
 using Windows.Win32;
@@ -87,12 +88,26 @@ internal static class Mp4Transcoder
                 {
                     if ((flags & (uint)MF_SOURCE_READER_FLAG.MF_SOURCE_READERF_ERROR) != 0)
                         throw new InvalidOperationException("The recording couldn't be read.");
-                    if ((flags & (uint)MF_SOURCE_READER_FLAG.MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED) != 0)
-                        throw new InvalidOperationException("The recording format changed during compression.");
                     // FIRST_* selectors are resolved to actual indices by MF; inspect each selected stream's major type.
                     reader.GetCurrentMediaType(stream, out var current);
                     Guid major;
-                    try { current.GetGUID(PInvoke.MF_MT_MAJOR_TYPE, out major); }
+                    try
+                    {
+                        current.GetGUID(PInvoke.MF_MT_MAJOR_TYPE, out major);
+                        if ((flags & (uint)MF_SOURCE_READER_FLAG.MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED) != 0)
+                        {
+                            if (major != PInvoke.MFMediaType_Video) throw new InvalidOperationException("The recording format changed during compression.");
+                            current.GetGUID(PInvoke.MF_MT_SUBTYPE, out var subtype);
+                            if (subtype != PInvoke.MFVideoFormat_NV12) throw new InvalidOperationException("The recording format changed during compression.");
+                            current.GetUINT64(PInvoke.MF_MT_FRAME_SIZE, out var decodedSize);
+                            var decoded = new PixelSize(checked((int)(decodedSize >> 32)), checked((int)(decodedSize & uint.MaxValue)));
+                            if (!DecodedVideoFormatChange.CanAccept(progress.VideoFramesWritten > 0, new(width, height), decoded, VideoAperture(current)))
+                                throw new InvalidOperationException("The recording format changed during compression.");
+                            // The decoder can announce padded dimensions with the first sample.
+                            // Give the sink the actual input layout; its output stays at the recorded size.
+                            writer.SetInputMediaType(videoStream, current, null);
+                        }
+                    }
                     finally { Release(current); }
                     var kind = major == PInvoke.MFMediaType_Video ? TranscodeStream.Video : TranscodeStream.Audio;
                     var destination = kind == TranscodeStream.Video ? videoStream : audioStream;

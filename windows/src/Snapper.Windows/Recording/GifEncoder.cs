@@ -104,7 +104,7 @@ internal static class GifEncoder
             reader.GetCurrentMediaType(Video, out type);
             type.GetUINT64(PInvoke.MF_MT_FRAME_SIZE, out var size);
             var width = checked((int)(size >> 32)); var height = checked((int)(size & uint.MaxValue));
-            var crop = GifFrameCrop.CropFor(width, height, Aperture(type), timing.RecordedSize.Width, timing.RecordedSize.Height);
+            var crop = GifFrameCrop.CropFor(width, height, VideoAperture(type), timing.RecordedSize.Width, timing.RecordedSize.Height);
             var stride = -checked(width * 4);
             try { type.GetUINT32(PInvoke.MF_MT_DEFAULT_STRIDE, out var raw); stride = unchecked((int)raw); }
             catch (COMException) { } // RGB32's default uncompressed orientation is bottom-up.
@@ -129,7 +129,26 @@ internal static class GifEncoder
                 reader.ReadSample(Video, 0, out _, out var flags, out _, out var sample);
                 try
                 {
-                    CheckFlags(flags);
+                    // H.264 decoders can announce aligned dimensions on their first output
+                    // (for example 800x608 for 800x600 video). Refresh layout before reading
+                    // that sample, retaining the recorded-size crop rather than rejecting it.
+                    if ((flags & (uint)MF_SOURCE_READER_FLAG.MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED) != 0)
+                    {
+                        Release(type); type = null;
+                        reader.GetCurrentMediaType(Video, out type);
+                        type.GetGUID(PInvoke.MF_MT_SUBTYPE, out var subtype);
+                        if (subtype != PInvoke.MFVideoFormat_RGB32) throw new InvalidOperationException("The recording's decoded format changed.");
+                        type.GetUINT64(PInvoke.MF_MT_FRAME_SIZE, out size);
+                        width = checked((int)(size >> 32)); height = checked((int)(size & uint.MaxValue));
+                        var aperture = VideoAperture(type);
+                        if (!DecodedVideoFormatChange.CanAccept(lastDecodedTime is not null, timing.RecordedSize, new(width, height), aperture))
+                            throw new InvalidOperationException("The recording's decoded format changed.");
+                        crop = GifFrameCrop.CropFor(width, height, aperture, timing.RecordedSize.Width, timing.RecordedSize.Height);
+                        stride = -checked(width * 4);
+                        try { type.GetUINT32(PInvoke.MF_MT_DEFAULT_STRIDE, out var raw); stride = unchecked((int)raw); }
+                        catch (COMException) { }
+                    }
+                    CheckFlags(flags & ~(uint)MF_SOURCE_READER_FLAG.MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED);
                     if (sample is not null)
                     {
                         sample.GetSampleTime(out var time);
@@ -165,23 +184,6 @@ internal static class GifEncoder
             Release(lastDecodedSample); last?.Dispose(); Release(metadata); Release(encoder); Release(stream); Release(factory);
             Release(type); Release(requested); Release(reader); Release(attributes);
         }
-    }
-    private static unsafe PixelRect? Aperture(IMFMediaType type)
-    {
-        try
-        {
-            var key = PInvoke.MF_MT_MINIMUM_DISPLAY_APERTURE;
-            var data = new byte[sizeof(MFVideoArea)];
-            uint copied = 0;
-            type.GetBlob(&key, data, (uint)data.Length, &copied);
-            if (copied < data.Length) return null;
-            fixed (byte* pointer = data)
-            {
-                var area = *(MFVideoArea*)pointer;
-                return new(area.OffsetX.value, area.OffsetY.value, area.Area.cx, area.Area.cy);
-            }
-        }
-        catch (COMException) { return null; }
     }
     private sealed class DecodedBitmap(IWICBitmap bitmap, GCHandle pin) : IDisposable
     {

@@ -213,6 +213,8 @@ internal sealed class RecordingSession
     }
     private async Task StartCaptureAsync()
     {
+        var stage = "device and microphone acquisition";
+        Debug.WriteLine($"Snapper: Recording preparation: {configuration}, format={requestedFormat}, microphone={recordMicrophone}");
         Direct3D11Helper.DeviceLease? acquired = null;
         Mp4Writer? createdWriter = null;
         CaptureFrameSource? createdSource = null;
@@ -239,11 +241,13 @@ internal sealed class RecordingSession
             }
             Debug.WriteLine($"Snapper: Microphone start: {microphoneTask.Result.Result}");
             startupCancellation.Token.ThrowIfCancellationRequested();
+            stage = "writer creation";
             createdWriter = await Mp4Writer.CreateAsync(outputPath, configuration, acquired ?? throw new InvalidOperationException("Missing recording device."), openedMicrophone?.Format);
             createdWriter.FirstSampleWritten += FirstSampleWritten;
             createdWriter.Finished += WriterFinished;
             createdWriter.Failed += WriterFailed;
             startupCancellation.Token.ThrowIfCancellationRequested();
+            stage = "BeginWriting";
             await createdWriter.BeginWritingAsync();
             if (openedMicrophone is not null && createdWriter.HasAudio)
             {
@@ -251,14 +255,17 @@ internal sealed class RecordingSession
                 createdAudio.Start();
             }
             startupCancellation.Token.ThrowIfCancellationRequested();
+            stage = "WGC source creation";
             createdSource = await Task.Run(() => CaptureFrameSource.CreateAsync(acquired, configuration, display, createdWriter, window));
             startupCancellation.Token.ThrowIfCancellationRequested();
             device = acquired; writer = createdWriter; source = createdSource; audio = createdAudio;
             createdSource.SourceClosed += SourceClosed; createdSource.Failed += SourceFailed;
+            stage = "WGC StartCapture";
             await Task.Run(createdSource.Start);
         }
         catch (Exception error)
         {
+            Debug.WriteLine($"Snapper: Recording {stage}: {error.GetType().FullName}, HRESULT=0x{error.HResult:X8}: {error}");
             createdWriter?.Abort();
             await Task.Run(() =>
             {

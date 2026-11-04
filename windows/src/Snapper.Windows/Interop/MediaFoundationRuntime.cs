@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Snapper.Core.Geometry;
 using System.Runtime.InteropServices;
 using Windows.Win32;
 using Windows.Win32.Media.MediaFoundation;
@@ -28,5 +29,22 @@ internal static class MediaFoundationRuntime
     public static long QpcTicks => PInvoke.MFGetSystemTime();
     public static ulong Pack(uint high, uint low) => ((ulong)high << 32) | low;
     public static void SetSize(IMFAttributes attributes, Guid key, int width, int height) => attributes.SetUINT64(key, Pack((uint)width, (uint)height));
+    public static unsafe PixelRect? VideoAperture(IMFMediaType type)
+    {
+        try
+        {
+            var key = PInvoke.MF_MT_MINIMUM_DISPLAY_APERTURE;
+            var data = new byte[sizeof(MFVideoArea)];
+            uint copied = 0;
+            type.GetBlob(&key, data, (uint)data.Length, &copied);
+            if (copied < data.Length) return null;
+            fixed (byte* pointer = data)
+            {
+                var area = *(MFVideoArea*)pointer;
+                return new(area.OffsetX.value, area.OffsetY.value, area.Area.cx, area.Area.cy);
+            }
+        }
+        catch (COMException) { return null; }
+    }
     public static void Release(object? value) { if (value is not null && Marshal.IsComObject(value)) Marshal.ReleaseComObject(value); }
 }
