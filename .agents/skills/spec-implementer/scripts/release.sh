@@ -124,15 +124,16 @@ ASSETS="$OUT/assets"
 # --- Tests -------------------------------------------------------------------------------
 log "xcodegen + macOS tests"
 xcodegen generate --quiet
-xcodebuild -scheme Snapper -derivedDataPath "$OUT/DerivedData-test" test -quiet \
+xcodebuild -scheme Snapper -derivedDataPath "$OUT/DerivedData-test" test \
   > "$OUT/macos-test.log" 2>&1 || { tail -50 "$OUT/macos-test.log"; die "macOS tests failed (log: $OUT/macos-test.log)"; }
-MAC_TESTS="$(grep -Eo 'Executed [0-9]+ tests?, with [0-9]+ failures?' "$OUT/macos-test.log" | tail -1 || true)"
+# Swift Testing summary, e.g. "Test run with 405 tests in 73 suites passed".
+MAC_TESTS="$(sed -nE 's/.*Test run with ([0-9]+) tests? in [0-9]+ suites? passed.*/Unit tests: \1 passed, 0 failed./p' "$OUT/macos-test.log" | tail -1)"
 echo "${MAC_TESTS:-macOS tests passed}"
 
 log "Windows tests (Release)"
 dotnet test windows/Snapper.slnx -c Release > "$OUT/windows-test.log" 2>&1 \
   || { tail -50 "$OUT/windows-test.log"; die "Windows tests failed (log: $OUT/windows-test.log)"; }
-WIN_TESTS="$(grep -E '^(Passed|Failed)!' "$OUT/windows-test.log" | tail -1 || true)"
+WIN_TESTS="$(sed -nE 's/^Passed! +- Failed: +([0-9]+), Passed: +([0-9]+), Skipped: +([0-9]+).*/Unit tests: \2 passed, \1 failed, \3 skipped./p' "$OUT/windows-test.log" | tail -1)"
 echo "${WIN_TESTS:-Windows tests passed}"
 
 # --- macOS build -------------------------------------------------------------------------
@@ -162,7 +163,7 @@ while read -r dep; do
       [[ -e "$APP/Contents/Frameworks/$name" ]] || die "linked library $dep is not embedded in the app" ;;
     *) die "app links a non-system library outside the bundle: $dep" ;;
   esac
-done < <(otool -L "$BIN" | tail -n +2 | awk '{print $1}')
+done < <(otool -L "$BIN" | grep -v ':$' | awk '{print $1}' | sort -u)  # skip per-arch header lines
 codesign --verify --deep --strict "$APP" || die "codesign verification failed"
 echo "universal ($ARCHS_FOUND), version $VERSION ($BUILD_NUMBER), only system or embedded libraries"
 
