@@ -3,10 +3,15 @@ using Snapper.Core.App;
 namespace Snapper.Core.Tests;
 public sealed class VersionInfoTests
 {
+    // The release script bumps <Version>, so assert the shape rather than a fixed number.
     [Fact] public void ExactReleaseVersionWithoutGitSuffix()
     {
         var assembly = typeof(AppIconDesign).Assembly;
-        Assert.Equal(new Version(1, 0, 0, 0), assembly.GetName().Version);
-        Assert.Equal("1.0.0", assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion);
+        var version = assembly.GetName().Version;
+        Assert.NotNull(version);
+        Assert.Equal(0, version.Revision);
+        Assert.Equal(
+            $"{version.Major}.{version.Minor}.{version.Build}",
+            assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion);
     }
 }
