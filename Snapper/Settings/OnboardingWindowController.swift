@@ -4,11 +4,13 @@ import SwiftUI
 @MainActor
 final class OnboardingWindowController: NSObject, NSWindowDelegate {
     private let settings: AppSettings
+    private let dockPresence: DockPresenceController
     private let model = OnboardingModel()
     private var window: NSWindow?
 
-    init(settings: AppSettings) {
+    init(settings: AppSettings, dockPresence: DockPresenceController) {
         self.settings = settings
+        self.dockPresence = dockPresence
         super.init()
     }
 
@@ -37,6 +39,7 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
         NotificationCenter.default.removeObserver(self, name: NSApplication.didBecomeActiveNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(refreshOnActivation),
                                                name: NSApplication.didBecomeActiveNotification, object: nil)
+        if let window { dockPresence.track(window, kind: .onboarding) }
         NSApp.activate()
         window?.makeKeyAndOrderFront(nil)
     }

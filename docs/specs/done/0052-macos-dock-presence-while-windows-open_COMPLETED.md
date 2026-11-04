@@ -175,3 +175,21 @@ disappears from the Dock and ⌘Tab again and lives only in the menu bar.
 - The app icon artwork itself (0051-macos-app-icon).
 - A user setting to always show the Dock icon.
 - The Windows app (tray app with normal taskbar windows; PRD §13 is unchanged).
+
+## Verification status
+- 2026-11-04: `xcodegen generate`, `xcodebuild -scheme Snapper -configuration Debug build`, and
+  `xcodebuild -scheme Snapper test` green: 424 tests in 75 suites passed, including the new
+  `DockPresenceTests` (DockPresence open/close transitions and DockReopenDecision).
+- Implementation notes: tracking happens before `showWindow`/`NSApp.activate()`, so the policy is
+  `.regular` before the window comes up. No re-activation or delay hack was added for the menu bar;
+  check step 5 for the first `.accessory → .regular` switch.
+- Manual verification (real GUI session):
+  - [ ] not yet run by user — 1. Launch without Screen Recording permission: setup window appears with a Dock icon.
+  - [ ] not yet run by user — 2. Switch to Finder, ⌘Tab back to Snapper: setup window comes to front.
+  - [ ] not yet run by user — 3. Switch away, click Snapper's Dock icon: setup window comes to front.
+  - [ ] not yet run by user — 4. Close the setup window: Dock icon and ⌘Tab entry disappear; menu bar item still works.
+  - [ ] not yet run by user — 5. Open Settings: Dock icon appears, ⌘Tab works, Snapper's menus show when active; close Settings → Dock icon goes away.
+  - [ ] not yet run by user — 6. Two annotation windows: closing one keeps the Dock icon; minimizing the other keeps it; Dock click restores it; closing it removes the Dock icon.
+  - [ ] not yet run by user — 7. Cancel "Discard changes?" on a dirty annotation window: window and Dock icon stay.
+  - [ ] not yet run by user — 8. With no Snapper windows open, a ⌘⇧4 screenshot and ⌘⇧5 recording never show a Dock icon.
+  - [ ] not yet run by user — 9. With Settings open and a dirty annotation window, Quit from the Dock menu shows the existing "Quit and discard N unsaved annotations?" prompt.

@@ -20,6 +20,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator?.applicationShouldTerminate() ?? .terminateNow
     }
 
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        coordinator?.handleDockReopen() ?? true
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }
 }

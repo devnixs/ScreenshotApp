@@ -4,7 +4,11 @@ import AppKit
 final class AnnotationWindowManager {
     private(set) var controllers: [AnnotationWindowController] = []
     private let settings: AppSettings
-    init(settings: AppSettings) { self.settings = settings }
+    private let dockPresence: DockPresenceController
+    init(settings: AppSettings, dockPresence: DockPresenceController) {
+        self.settings = settings
+        self.dockPresence = dockPresence
+    }
 
     func commitAllTextEdits() {
         for controller in controllers { controller.canvas.textEditingController.commit() }
@@ -24,6 +28,7 @@ final class AnnotationWindowManager {
                                                     settings: settings, existingOrigins: origins)
         controller.onClose = { [weak self] closed in self?.controllers.removeAll { $0 === closed } }
         controllers.append(controller)
+        if let window = controller.window { dockPresence.track(window, kind: .annotation) }
         controller.showWindow(nil)
         NSApp.activate()
         controller.window?.makeKeyAndOrderFront(nil)

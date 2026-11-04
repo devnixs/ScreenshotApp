@@ -18,10 +18,16 @@ final class SettingsWindowController {
         return window
     }()
 
-    init(model: SettingsModel) { self.model = model }
+    private let dockPresence: DockPresenceController
+
+    init(model: SettingsModel, dockPresence: DockPresenceController) {
+        self.model = model
+        self.dockPresence = dockPresence
+    }
 
     func show() {
         model.refreshOnAppear()
+        dockPresence.track(window, kind: .settings)
         NSApp.activate()
         window.makeKeyAndOrderFront(nil)
     }

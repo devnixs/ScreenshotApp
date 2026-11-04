@@ -10,10 +10,14 @@ final class AppCoordinator: NSObject {
     private let capturer = ScreenshotCapturer()
     private let shutterSound = ShutterSound()
     private let screenshotLogger = Logger(subsystem: "com.thera-engineering.snapper", category: "screenshot")
-    private lazy var annotationWindowManager = AnnotationWindowManager(settings: settings)
+    private lazy var dockPresenceController = DockPresenceController()
+    private lazy var annotationWindowManager = AnnotationWindowManager(settings: settings,
+                                                                       dockPresence: dockPresenceController)
     private lazy var settingsModel = SettingsModel(settings: settings)
-    private lazy var settingsWindowController = SettingsWindowController(model: settingsModel)
-    private lazy var onboardingWindowController = OnboardingWindowController(settings: settings)
+    private lazy var settingsWindowController = SettingsWindowController(model: settingsModel,
+                                                                         dockPresence: dockPresenceController)
+    private lazy var onboardingWindowController = OnboardingWindowController(settings: settings,
+                                                                             dockPresence: dockPresenceController)
     private var statusItemController: StatusItemController?
     private var modeMachine = AppModeMachine()
     private var recordingSession: RecordingSession?
@@ -275,4 +279,7 @@ final class AppCoordinator: NSObject {
     func openSettings() { settingsWindowController.show() }
     @objc func openSettings(_ sender: Any?) { openSettings() }
     func quit() { NSApp.terminate(nil) }
+
+    /// Dock icon click while a tracked window is open (PRD §3).
+    func handleDockReopen() -> Bool { dockPresenceController.reopen() }
 }
