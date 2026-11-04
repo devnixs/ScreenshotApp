@@ -132,7 +132,7 @@ Work is planned and built through specs in `docs/specs/`:
 - `todo/NNNN-<slug>_TODO.md`: ready-to-build specs. Numbers are global, never reused, and in dependency order.
 - `done/NNNN-<slug>_COMPLETED.md`: shipped specs, with a *Verification status* section.
 
-The **spec-writer** skill (`.agents/skills/spec-writer/`) writes specs from the PRD or a request without implementing them. The **spec-implementer** skill (`.agents/skills/spec-implementer/`) builds the todo queue in order, one sub-agent per spec, then commits each spec and moves it to `done/`. Reference the spec ID in commit messages (`0004: …`).
+The **spec-writer** skill (`.agents/skills/spec-writer/`) writes specs from the PRD or a request without implementing them. The **spec-implementer** skill (`.agents/skills/spec-implementer/`) builds the todo queue in order, one sub-agent per spec, then commits each spec and moves it to `done/`. After a clean batch it bumps the version (`windows/Directory.Build.props` `<Version>`, `project.yml` `MARKETING_VERSION`/`CURRENT_PROJECT_VERSION`) and publishes one GitHub release `vX.Y.Z` with the universal macOS `.dmg`/`.zip` and self-contained single-file Windows x64/Arm64 `.exe`s, via `.agents/skills/spec-implementer/scripts/release.sh`. Reference the spec ID in commit messages (`0004: …`).
 
 ## Things that can't be automated
 

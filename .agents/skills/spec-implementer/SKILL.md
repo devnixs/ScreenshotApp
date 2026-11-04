@@ -4,7 +4,8 @@ description: >
   Work through the backlog of specs in docs/specs/todo/ and implement them one at a time, each in
   its own sub-agent, end to end: Swift code, unit tests, xcodegen + build + full test run with
   fixes, PRD/AGENTS.md updates, a manual-verification checklist, then commit on main and move the
-  spec into docs/specs/done/. Use this whenever the user wants the Snapper todo specs actually
+  spec into docs/specs/done/. After the batch, bump the version and publish one GitHub release with
+  the self-contained macOS and Windows binaries. Use this whenever the user wants the Snapper todo specs actually
   BUILT (not just planned): "implement the specs in docs/specs/todo", "work through the backlog",
   "build out the todo folder", "implement 0003 through 0007", "clear the spec queue". Trigger even
   when the user names specific spec files or a range instead of the whole folder. Do NOT trigger
@@ -61,6 +62,10 @@ these are their decisions, not yours:
   the tree is dirty, ask what to do with the changes. Never stash or discard them yourself.
 - **Remote:** check for an upstream (`git rev-parse --abbrev-ref @{u}`). If there is one, each spec
   is pushed after it's committed. If there isn't, commits stay local, and you say so in the reports.
+- **Release:** the batch ends with a GitHub release (step 6), so `gh auth status` must show a
+  logged-in account with push access to `devnixs/ScreenshotApp`, and there must be an upstream.
+  If either is missing, say so up front: the specs can still be built, but the release will be
+  skipped.
 - **Tooling:** for Windows specs (they touch `windows/`; titles say "Windows"), `dotnet` with the
   .NET 10 SDK must be on `PATH`. For macOS specs, `xcodegen` and `xcodebuild` must be on `PATH`. If `xcodegen` is missing, ask the
   user to install it (for example `brew install xcodegen`). Don't install tools on your own.
@@ -133,7 +138,66 @@ After each spec closes, post a one-line status, for example
 At the end, summarize: which specs shipped, any that were skipped or that stopped the batch, the
 final state of the queue, and **one combined manual verification checklist** covering every spec in
 the batch, grouped by spec, so the user can work through it in one GUI session. Remind them that
-rebuilding with a different signature can reset the Screen Recording permission.
+rebuilding with a different signature can reset the Screen Recording permission. Include the
+release URL and version from step 6 (or why it was skipped).
+
+### 6. Publish a release
+
+Once the queue is finished, publish **one** GitHub release
+(https://github.com/devnixs/ScreenshotApp/releases) that contains both the macOS and the Windows
+binaries. Running this skill counts as the user asking for this release, its version-bump commit,
+its tag, and the push.
+
+**Only release when the batch ended cleanly:** at least one spec shipped in this session, no spec
+stopped the batch, `main` is clean and pushed, and the step 4 checks are green. If the batch halted
+on a blocker, or nothing was implemented, skip the release and say why.
+
+1. **Pick the bump.** `minor` when any spec in the batch adds or changes user-facing behavior;
+   `patch` when the batch only fixes bugs, refactors, or changes docs/tooling. Use `major` only
+   when the user asks for it. The script reads the current version from
+   `windows/Directory.Build.props` and the highest `vX.Y.Z` tag, so it never goes backwards.
+2. **Write the release notes** to a file in your scratchpad (not in the repo), in plain user-facing
+   English, following PRD §13 wording rules for Windows text:
+   - one line on what Snapper is;
+   - `## What's new`: one bullet per shipped spec, describing the change for users (not spec IDs
+     or file names), with Windows-only or macOS-only items labeled;
+   - `## Download`: `Snapper-macOS.dmg` (open it and drag Snapper to Applications),
+     `Snapper-macOS.zip` (same app), both universal for Apple silicon and Intel, macOS 15 or
+     later; `Snapper-win-x64.exe` (most Intel and AMD PCs) and `Snapper-win-arm64.exe` (Windows on
+     Arm), Windows 11, self-contained single files with no .NET install or installer needed;
+   - `## First launch`: the macOS build is ad hoc signed and not notarized (System Settings ›
+     Privacy & Security › Open Anyway, or `xattr -dr com.apple.quarantine /Applications/Snapper.app`),
+     and a new ad hoc build may need Screen Recording permission granted again; the Windows
+     executables are unsigned, so SmartScreen may warn (More info › Run anyway). Exit any older
+     running Snapper before launching the new one;
+   - a note that GUI acceptance checks (capture, recording, annotation) for this batch have not
+     been run yet, unless the user has recorded them.
+
+   The script appends a `## Validation` section (test counts) and the source commit.
+3. **Run the release script** from the repo root:
+
+   ```sh
+   .agents/skills/spec-implementer/scripts/release.sh --bump <patch|minor|major> --notes <notes-file>
+   ```
+
+   It refuses to run unless `main` is clean and not behind `origin/main`. It then: bumps
+   `<Version>` in `windows/Directory.Build.props` and `MARKETING_VERSION` (and
+   `CURRENT_PROJECT_VERSION` + 1) in `project.yml` and commits `Release vX.Y.Z`; runs the macOS
+   and Windows tests; builds a **universal (arm64 + x86_64), ad hoc signed** macOS Release app and
+   packages `Snapper-macOS.zip` and `Snapper-macOS.dmg`; publishes **self-contained, single-file**
+   `Snapper-win-x64.exe` and `Snapper-win-arm64.exe` through the existing publish profiles; checks
+   that the app links only system libraries or libraries embedded in the bundle, carries the new
+   version, and that each Windows publish is one exe that bundles the .NET runtime; writes
+   `SHA256SUMS.txt`; pushes `main`, tags `vX.Y.Z`, and creates the release marked as latest. Logs
+   and assets are in `build/release/` (git-ignored). Expect 10–20 minutes. `--dry-run` does the
+   build and checks without editing, committing, tagging, or publishing anything.
+4. **If it fails**, fix the cause the same way as step 4 (commit fixes on `main` and push), then
+   run the same command again. If the failed run already made the `Release vX.Y.Z` commit, the
+   script notices the untagged release and finishes it without bumping again. Never delete or move
+   an existing tag or release without asking. A signing, notarization, or certificate change is a
+   blocker to raise with the user, not something to fix here.
+5. **Confirm** with `gh release view vX.Y.Z --repo devnixs/ScreenshotApp` that all five assets are
+   attached, and put the release URL in the final summary.
 
 ---
 
@@ -262,6 +326,8 @@ needs deciding, give your recommended answer, and say what state you left the wo
   spec-writer skill can add one).
 - **Permission resets.** Rebuilding with a different signature can reset Screen Recording
   permission. If the user reports blank captures after a batch, point to that first (`AGENTS.md`).
+- **One release per session.** Don't publish a release per spec; the batch gets one release at
+  the end (step 6). If the user only wants to build specs without releasing, skip step 6.
 - **Don't squash the batch into one commit.** Each spec gets its own sub-agent and its own
   commit(s), so each spec maps to one change in the history, which stays reviewable and bisectable.
 - **Recover on your own.** A failed, incomplete, or colliding build is not a reason to pause the
