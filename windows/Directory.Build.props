@@ -8,7 +8,7 @@
     <Deterministic>true</Deterministic>
     <Company>Thera Engineering</Company>
     <Product>Snapper</Product>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <Copyright>© 2026 Thera Engineering</Copyright>
   </PropertyGroup>
