@@ -29,6 +29,7 @@ Snapper/
     Model/               # Pure shape model + document + undo (no AppKit drawing)
   Settings/              # SwiftUI settings + onboarding, preference keys
   Support/               # File naming, save folder, clipboard, permissions
+  AppIcon.icon/          # Icon Composer app icon (icon.json + white SVG layers)
 SnapperTests/            # Unit tests
 docs/PRD.md
 ```

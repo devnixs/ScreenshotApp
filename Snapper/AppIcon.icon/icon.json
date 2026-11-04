@@ -1,0 +1,16 @@
+{
+  "fill" : { "automatic-gradient" : "srgb:0.05882,0.42353,0.74118,1.00000" },
+  "groups" : [
+    {
+      "layers" : [ { "image-name" : "lens.svg", "name" : "lens" } ],
+      "shadow" : { "kind" : "neutral", "opacity" : 0.5 },
+      "translucency" : { "enabled" : true, "value" : 0.5 }
+    },
+    {
+      "layers" : [ { "image-name" : "brackets.svg", "name" : "brackets" } ],
+      "shadow" : { "kind" : "neutral", "opacity" : 0.5 },
+      "translucency" : { "enabled" : true, "value" : 0.5 }
+    }
+  ],
+  "supported-platforms" : { "squares" : [ "macOS" ] }
+}

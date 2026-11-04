@@ -206,3 +206,29 @@ See the Test plan for the cases.
 - Document icons, DMG background/volume icon, or notarisation and distribution packaging.
 - Using the icon inside the onboarding or Settings UI. Neither shows an app icon today, and the PRD
   doesn't ask for one.
+
+## Verification status
+
+**Automated (2026-11-04):** `xcodegen generate`, `xcodebuild -scheme Snapper -configuration Debug build`,
+and `xcodebuild -scheme Snapper test` are green: 414 tests in 74 suites passed, including
+`AppIconTests` (the 8 planned cases plus `layersAreFilledOutlinesNotStrokes`). The generated project
+lists `AppIcon.icon` once as a `wrapper.icon` file in the Snapper Resources phase (not expanded). The
+built app contains `Contents/Resources/AppIcon.icns` and `Assets.car`, and `Info.plist` has
+`CFBundleIconFile = AppIcon` and `CFBundleIconName = AppIcon`.
+
+**Preview-justified tweak:** with the stroked `brackets.svg` above, Icon Composer's `ictool` `Dark`
+rendition filled the inside of each bracket's corner (a solid wedge between the arc and the arms,
+the same stroked-path defect as the lens), and `Default`/`ClearLight` showed a stray diagonal glare
+there. `brackets.svg` now holds the **same geometry as filled outlines**: the 64-pt round-capped
+stroke expanded into four closed paths (outer corner radius 96, inner radius 32, round caps of radius
+32), with no `stroke`. After the change, the `Default`, `Dark`, `ClearLight`, and `TintedDark`
+previews (256×256 @2x) all show four clean corner brackets around a hollow ring, centred, with
+nothing clipped. `icon.json` and `lens.svg` are exactly as specified.
+
+**Manual (GUI):**
+- [ ] 1. Get Info in Finder shows the blue viewfinder icon (refresh with `lsregister -f` + `killall Finder` if needed) — not yet run by user
+- [ ] 2. macOS 26 icon styles Default/Dark/Clear/Tinted all show the viewfinder with a hollow lens ring — not yet run by user
+- [ ] 3. Finder list view (16 px) still reads as a viewfinder — not yet run by user
+- [ ] 4. Privacy & Security › Screen Recording (and Login Items if enabled) show the new icon — not yet run by user
+- [ ] 5. A Snapper alert shows the new icon — not yet run by user
+- [ ] 6. On macOS 15 (if available), Finder shows the flat blue viewfinder fallback — not yet run by user
