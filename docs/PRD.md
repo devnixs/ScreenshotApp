@@ -4,7 +4,7 @@
 |---|---|
 | Status | Approved for v1 |
 | Owner | Raphael |
-| Last updated | 2026-11-03 |
+| Last updated | 2026-11-04 |
 | Bundle ID | `com.thera-engineering.snapper` (working name) |
 
 ## 1. Summary
@@ -333,6 +333,7 @@ Shortcuts are displayed as `Ctrl+Shift+4` everywhere (tray menu, Settings, notif
 - **Launch at login:** the value `Snapper` (the quoted path of the running exe) under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`. The toggle is on only when the value exists and points to the running exe. Turning it on rewrites the value and removes any "disabled" entry Windows keeps for Snapper under `StartupApproved\Run`; turning it off deletes the value. If Snapper is turned off in Task Manager's Startup apps, the box stays checked and a note says "Snapper is turned off in Startup apps." with an **Open Startup Apps** button (`ms-settings:startupapps`).
 - **Shortcuts:** a binding needs Ctrl or Alt (Shift is allowed in addition) plus one non-modifier key. Combinations with the Windows key are not accepted, because Windows reserves them. These are also rejected, with "This shortcut is reserved.": any F12 combination, Alt+F4, Alt+Tab, Alt+Esc, Alt+Space, Ctrl+Esc, and the common editing shortcuts Ctrl+A/C/V/X/Z/Y/S/W, Ctrl+Shift+Z, and Ctrl+Enter. A binding can be cleared with Backspace/Delete while recording or with the × button. A cleared shortcut does nothing and the tray menu shows no shortcut for it. A binding already used by another Snapper shortcut is rejected (section 10). The macOS conflict warning becomes: **"Another app is using this shortcut."**, shown when `RegisterHotKey` fails for that binding. There is no System Settings button.
 - **Microphone:** turning on *Record microphone* checks the Windows microphone privacy setting. Only an explicit denial counts as denied. Windows often reports "not determined" for unpackaged apps; in that case the toggle stays on and recording tries the device. If access is denied, the toggle switches back off and a note appears with an **Open Privacy Settings** button (`ms-settings:privacy-microphone`). The GIF rule from section 10 applies unchanged.
+- **Shortcut recorder focus:** opening or reopening Settings, selecting the Shortcuts tab, or returning to that tab does not automatically focus or start a recorder. Each field shows its current binding (or "Record Shortcut" when cleared), and global shortcuts remain enabled. Clicking a recorder or deliberately reaching it with Tab/Shift+Tab starts recording; leaving it ends recording and resumes global shortcuts.
 
 ### 13.10 First run (replaces section 11)
 
@@ -349,6 +350,7 @@ Every criterion in section 12 applies to the Windows app with the 13.2 mapping, 
 - [ ] With monitors at different scales (for example 100% and 150%), the overlay matches the dragged area and the PNG has each monitor's native pixel size.
 - [ ] Overlays, the recording pill, and the border never appear in screenshots or recordings.
 - [ ] A shortcut that another app already holds produces the tray notification and the Settings warning; the other shortcuts keep working.
+- [ ] Opening or returning to the Shortcuts tab leaves every recorder idle and global shortcuts enabled; clicking a field or deliberately tabbing into it starts recording.
 - [ ] Launch at login adds and removes the `Run` registry value, and Snapper starts at the next sign-in.
 - [ ] Launching Snapper a second time opens the running instance's Settings and doesn't start a second tray icon.
 - [ ] `dotnet publish` produces a single `Snapper.exe` per architecture that runs on a clean Windows 11 machine without .NET installed.
